@@ -1,0 +1,17 @@
+{
+  "name": "maximus-creative",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "core": "npm run start --workspace=@maximus/core",
+    "genesis": "npm run genesis --workspace=@maximus/core",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

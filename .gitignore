@@ -1,0 +1,7 @@
+node_modules/
+dist/
+data/
+wallet/
+.env
+*.log
+.DS_Store

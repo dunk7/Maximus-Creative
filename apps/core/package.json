@@ -1,0 +1,25 @@
+{
+  "name": "@maximus/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "genesis": "node --env-file=../../.env --import tsx ./src/cli.ts genesis",
+    "start": "node --env-file=../../.env --import tsx ./src/cli.ts start",
+    "tick-once": "node --env-file=../../.env --import tsx ./src/cli.ts tick-once",
+    "status": "node --env-file=../../.env --import tsx ./src/cli.ts status"
+  },
+  "dependencies": {
+    "@maximus/agent-runtime": "*",
+    "@maximus/tools": "*",
+    "@solana/web3.js": "^1.98.0",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
