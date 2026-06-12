@@ -67,12 +67,36 @@ if ! grep -q '^FRIEND_PASSWORD=' .env 2>/dev/null; then
 fi
 # Always clamp tick interval on 1GB VM — prevents API/CPU meltdown
 if grep -q '^TICK_INTERVAL_MS=' .env 2>/dev/null; then
-  sed -i 's/^TICK_INTERVAL_MS=.*/TICK_INTERVAL_MS=3600000/' .env
+  sed -i 's/^TICK_INTERVAL_MS=.*/TICK_INTERVAL_MS=1800000/' .env
 else
-  echo 'TICK_INTERVAL_MS=3600000' >> .env
+  echo 'TICK_INTERVAL_MS=1800000' >> .env
 fi
 
-npm install
+# Free RAM: stop Maximus and kill stray npm before install/build
+sudo systemctl stop maximus 2>/dev/null || true
+pkill -f 'npm install' 2>/dev/null || true
+pkill -f 'npm ci' 2>/dev/null || true
+sleep 2
+
+LOCK_HASH="$(md5sum package-lock.json | awk '{print $1}')"
+NEED_INSTALL=0
+if [ ! -f .npm-install-hash ] || [ "$(cat .npm-install-hash)" != "$LOCK_HASH" ] || [ ! -d node_modules ]; then
+  NEED_INSTALL=1
+fi
+
+if [ "$NEED_INSTALL" = "1" ]; then
+  echo "Running npm install (Maximus stopped to free RAM)..."
+  rm -rf node_modules/rpc-websockets/node_modules/uuid 2>/dev/null || true
+  npm install --prefer-offline --no-audit --no-fund
+  bash scripts/fix-uuid.sh
+  echo "$LOCK_HASH" > .npm-install-hash
+else
+  echo "node_modules unchanged — skipping npm install"
+fi
+
+bash scripts/fix-uuid.sh
+chmod +x scripts/start-maximus.sh scripts/fix-uuid.sh scripts/stabilize-vm.sh 2>/dev/null || true
+
 npm run build --workspace=@maximus/agent-runtime
 npm run build --workspace=@maximus/tools
 npm run build --workspace=@maximus/core
@@ -81,11 +105,16 @@ if [ ! -f data/agent.db ]; then
   npm run genesis
 fi
 
+# Smoke-test startup imports before enabling service
+node --env-file=.env -e "require('rpc-websockets'); console.log('imports ok')"
+
 sudo tee /etc/systemd/system/maximus.service > /dev/null << 'UNIT'
 [Unit]
 Description=Maximus Creative autonomous core
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -93,9 +122,10 @@ User=opc
 WorkingDirectory=/opt/maximus
 EnvironmentFile=/opt/maximus/.env
 Environment=NODE_OPTIONS=--max-old-space-size=384
-ExecStart=/usr/local/bin/npm run core
-Restart=always
-RestartSec=5
+ExecStart=/opt/maximus/scripts/start-maximus.sh
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=120
 TimeoutStopSec=30
 Nice=15
 IOSchedulingClass=idle
@@ -110,17 +140,28 @@ UNIT
 
 sudo systemctl daemon-reload
 sudo systemctl enable maximus
+sudo systemctl reset-failed maximus 2>/dev/null || true
 sudo systemctl restart maximus
-sleep 15
+
+echo "Waiting for health..."
+for i in $(seq 1 30); do
+  if curl -sf --max-time 5 http://127.0.0.1:4747/health >/dev/null 2>&1; then
+    echo "Health OK"
+    curl -s --max-time 5 http://127.0.0.1:4747/health
+    echo
+    break
+  fi
+  sleep 2
+done
 sudo systemctl is-active maximus
-curl -s --max-time 20 http://127.0.0.1:4747/health || echo "health check pending..."
+curl -s --max-time 10 http://127.0.0.1:4747/health || echo "health check pending..."
 
 sudo tee /usr/local/bin/maximus-watchdog.sh > /dev/null << 'WATCHDOG'
 #!/bin/bash
 set -euo pipefail
 
 MEM_PCT=$(free | awk '/Mem:/ {printf "%.0f", $3/$2 * 100}')
-if [ "$MEM_PCT" -gt 90 ]; then
+if [ "$MEM_PCT" -gt 95 ]; then
   logger -t maximus-watchdog "memory at ${MEM_PCT}% — restarting maximus"
   sudo systemctl restart maximus
   exit 0
@@ -132,14 +173,16 @@ if ! curl -sf --max-time 10 http://127.0.0.1:4747/health > /dev/null; then
 fi
 WATCHDOG
 sudo chmod +x /usr/local/bin/maximus-watchdog.sh
-(sudo crontab -l 2>/dev/null || true; echo "*/2 * * * * /usr/local/bin/maximus-watchdog.sh") | grep -v maximus-watchdog | sudo crontab -
+(sudo crontab -l 2>/dev/null || true; echo "*/2 * * * * /usr/local/bin/maximus-watchdog.sh") | grep -v maximus-watchdog | sudo crontab - || true
 echo "Watchdog cron installed"
 REMOTE_INSTALL
 
 echo ""
 echo "==> Deploy complete!"
-echo "    Talk:    ./scripts/talk.sh \"Hello Maximus\""
-echo "    Status:  curl -s http://${IP}:4747/status"
+echo "    Chat:       http://${IP}:4747/"
+echo "    Dashboard:  http://${IP}:4747/dashboard"
+echo "    Status API: curl -s http://${IP}:4747/status"
+echo "    Talk CLI:   ./scripts/talk.sh \"Hello Maximus\""
 echo "    Logs:    ssh ${USER}@${IP} 'sudo journalctl -u maximus -f'"
 echo ""
 echo "If talk fails auth, fetch the server secret:"

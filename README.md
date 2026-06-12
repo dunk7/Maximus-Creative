@@ -49,13 +49,24 @@ Check active model: `npm run status --workspace=@maximus/core`
 | `npm run core` | Start immortal tick loop + wake server |
 | `npm run tick-once --workspace=@maximus/core` | Run a single tick |
 | `npm run status --workspace=@maximus/core` | Print status JSON |
-| `npm run web --workspace=@maximus/web` | Start status web UI on :3000 |
 | `./scripts/supervisor.sh` | Auto-restart loop after self_restart |
+
+## Web UI (port 4747 — same process as core)
+
+No separate Next.js server needed. One Node process serves everything:
+
+| URL | What |
+|-----|------|
+| `/` or `/talk` | Chat UI with streaming replies (SSE) |
+| `/dashboard` | Live status dashboard (tick, wallet, journal) |
+| `/status` | Raw status JSON |
+
+Open `http://127.0.0.1:4747` after `npm run core`. On the 1 GB VM, **do not** run `apps/web` — it adds a second heavy Node process for no gain.
 
 ## Wake endpoints (port 4747)
 
 - `GET /health` — liveness
-- `GET /status` — full agent status JSON
+- `GET /status` — full agent status JSON (cached ~15s; balance cached ~45s)
 - `GET /messages` — conversation history (`Authorization: Bearer $WAKE_SECRET`)
 - `POST /chat` — talk to Maximus, get an immediate reply (`Authorization: Bearer $WAKE_SECRET`, body `{"message":"..."}`)
 - `POST /message` — queue a message for the next tick (uses tools)

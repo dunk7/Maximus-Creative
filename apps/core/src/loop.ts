@@ -11,6 +11,7 @@ import {
   MAX_TICK_TOOL_CALLS,
   openDatabase,
   runTick,
+  setMeta,
   shouldSkipIdleTick,
   writeJournal,
 } from "@maximus/agent-runtime";
@@ -21,7 +22,7 @@ import {
   loadOrCreateWallet,
 } from "@maximus/tools";
 import { forceReleaseAgentLock, withAgentLock } from "./agent-lock.js";
-import { buildAgentStatus, getEffectiveTickIntervalMs } from "./status.js";
+import { buildAgentStatus, getEffectiveTickIntervalMs, invalidateStatusCache } from "./status.js";
 import { runStartupRepair } from "./repair.js";
 import { startWakeServer } from "./wake-server.js";
 
@@ -74,11 +75,13 @@ async function runTickBody(forceRun: boolean): Promise<void> {
 
   if (shouldSkipIdleTick(ctx, lastTickAt, forceRun)) {
     console.log("[Tick] tick skipped — idle");
+    setMeta(db, "last_tick_at", new Date().toISOString());
     return;
   }
 
   if (os.freemem() < LOW_MEMORY_SKIP_BYTES) {
     console.warn(`[Tick] low memory skip (${Math.round(os.freemem() / 1024 / 1024)}MB free)`);
+    setMeta(db, "last_tick_at", new Date().toISOString());
     return;
   }
 
@@ -93,6 +96,7 @@ async function runTickBody(forceRun: boolean): Promise<void> {
   });
   console.log(`[Tick #${tickNumber}] ${result.summary.slice(0, 500)}`);
   console.log(`[Tick #${tickNumber}] tool calls: ${result.toolCalls}`);
+  invalidateStatusCache();
 
   for (const message of ctx.pendingCreatorMessages) {
     answerCreatorMessage(db, message.id, result.replyText, tickNumber);
@@ -132,7 +136,7 @@ async function executeTick(forceRun = false): Promise<void> {
       } finally {
         runningTick = false;
       }
-    });
+    }, { reason: "tick" });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn(`[Tick] could not acquire lock: ${message}`);
@@ -166,13 +170,13 @@ export async function startImmortalLoop(): Promise<void> {
     try {
       if (wakeNow) {
         wakeNow = false;
-        await executeTick(true);
+        await executeTick(false);
       }
 
-      await sleep(1000);
+      await sleep(5000);
 
-      const interval = getEffectiveTickIntervalMs(config, openDatabase(config));
-      const lastTickAt = openDatabase(config)
+      const interval = getEffectiveTickIntervalMs(config, db);
+      const lastTickAt = db
         .prepare("SELECT value FROM meta WHERE key = 'last_tick_at'")
         .get() as { value: string } | undefined;
       const elapsed = lastTickAt ? Date.now() - new Date(lastTickAt.value).getTime() : Infinity;

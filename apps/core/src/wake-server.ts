@@ -14,7 +14,8 @@ import {
   loadConfig,
   openDatabase,
   runCreatorChat,
-  runCreatorChatStream,
+  generateCreatorChatReply,
+  streamChatReply,
   type ChatStreamEvent,
   type ChatThreadRow,
   type ChatThreadSummary,
@@ -25,6 +26,7 @@ import { resolveAccess } from "./access-auth.js";
 import { executeApprovedSend, rejectPendingSend } from "./approve-send.js";
 import { CHAT_LOCK_MAX_WAIT_MS, withAgentLock } from "./agent-lock.js";
 import { renderChatPage } from "./chat-page.js";
+import { renderDashboardPage } from "./dashboard-page.js";
 import { buildAgentStatus } from "./status.js";
 import { assertThreadAccess, getThreadPassword } from "./thread-auth.js";
 import { createToolExecutor, getChatToolDefinitions, loadOrCreateWallet } from "@maximus/tools";
@@ -34,10 +36,21 @@ export interface WakeServerHandlers {
   onWake: () => void;
 }
 
+const MAX_JSON_BODY_BYTES = 64 * 1024;
+
 function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on("data", (chunk) => chunks.push(chunk));
+    let total = 0;
+    req.on("data", (chunk: Buffer) => {
+      total += chunk.length;
+      if (total > MAX_JSON_BODY_BYTES) {
+        req.destroy();
+        reject(new Error("Request body too large"));
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on("end", () => {
       const raw = Buffer.concat(chunks).toString("utf8").trim();
       if (!raw) {
@@ -64,7 +77,7 @@ function isAgentBusyError(err: unknown): boolean {
 }
 
 async function withChatLock<T>(fn: () => Promise<T>): Promise<T> {
-  return withAgentLock(fn, { maxWaitMs: CHAT_LOCK_MAX_WAIT_MS });
+  return withAgentLock(fn, { maxWaitMs: CHAT_LOCK_MAX_WAIT_MS, reason: "chat" });
 }
 
 async function handleThreadChat(
@@ -91,14 +104,14 @@ async function handleThreadChatStream(
   role: UserRole,
   res: http.ServerResponse
 ): Promise<void> {
-  await withChatLock(async () => {
+  const generated = await withChatLock(async () => {
     const runtimeConfig = loadConfig();
     const db = openDatabase(runtimeConfig);
     const wallet = await loadWalletSnapshot(runtimeConfig);
     const keypair = loadOrCreateWallet(runtimeConfig);
     const tools = getChatToolDefinitions(db, role);
     const executeTool = createToolExecutor(db, runtimeConfig, keypair, role);
-    await runCreatorChatStream(
+    return generateCreatorChatReply(
       db,
       runtimeConfig,
       message,
@@ -106,10 +119,15 @@ async function handleThreadChatStream(
       tools,
       executeTool,
       threadId,
-      (event) => writeSse(res, event),
-      role
+      role,
+      (event: ChatStreamEvent) => {
+        if (event.type === "status" || event.type === "pending_send") {
+          writeSse(res, event);
+        }
+      }
     );
   });
+  streamChatReply((event: ChatStreamEvent) => writeSse(res, event), generated);
 }
 
 function threadSummary(thread: ChatThreadSummary | ChatThreadRow): ChatThreadSummary {
@@ -145,6 +163,12 @@ export function startWakeServer(
       if (path === "/" || path === "/talk") {
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(renderChatPage());
+        return;
+      }
+
+      if (path === "/dashboard") {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderDashboardPage());
         return;
       }
 

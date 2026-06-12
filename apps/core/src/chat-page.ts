@@ -1,5 +1,8 @@
+let chatPageCache: string | null = null;
+
 export function renderChatPage(): string {
-  return `<!DOCTYPE html>
+  if (chatPageCache) return chatPageCache;
+  chatPageCache = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -70,6 +73,31 @@ export function renderChatPage(): string {
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+    .model-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      margin-top: 0.3rem;
+      max-width: 100%;
+      font-size: 0.68rem;
+      font-weight: 650;
+      color: #91a7ff;
+      background: var(--accent-soft);
+      border: 1px solid #4c6ef544;
+      border-radius: 6px;
+      padding: 0.18rem 0.5rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .model-badge[hidden] { display: none; }
+    .model-badge .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #51cf66;
+      flex-shrink: 0;
     }
     .role-badge {
       flex-shrink: 0;
@@ -222,6 +250,57 @@ export function renderChatPage(): string {
       background: var(--maximus);
       border: 1px solid var(--border);
       border-bottom-left-radius: 6px;
+      white-space: normal;
+    }
+    .bubble.maximus p,
+    .bubble.maximus .md-p {
+      margin: 0 0 0.65em;
+    }
+    .bubble.maximus p:last-child,
+    .bubble.maximus .md-p:last-child,
+    .bubble.maximus ul:last-child,
+    .bubble.maximus ol:last-child,
+    .bubble.maximus pre:last-child {
+      margin-bottom: 0;
+    }
+    .bubble.maximus strong { font-weight: 700; }
+    .bubble.maximus em { font-style: italic; }
+    .bubble.maximus .md-code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.88em;
+      background: #00000040;
+      padding: 0.1em 0.35em;
+      border-radius: 4px;
+    }
+    .bubble.maximus pre.md-pre {
+      margin: 0.55em 0;
+      padding: 0.7rem 0.8rem;
+      background: #00000055;
+      border: 1px solid #ffffff12;
+      border-radius: 10px;
+      overflow-x: auto;
+      font-size: 0.84em;
+      line-height: 1.4;
+    }
+    .bubble.maximus pre.md-pre code {
+      font-family: inherit;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .bubble.maximus .md-list {
+      margin: 0.35em 0 0.65em;
+      padding-left: 1.2em;
+    }
+    .bubble.maximus .md-list li { margin: 0.2em 0; }
+    .bubble.maximus .md-heading {
+      font-weight: 700;
+      margin: 0.55em 0 0.35em;
+      line-height: 1.3;
+    }
+    .bubble.maximus a {
+      color: #91a7ff;
+      text-decoration: underline;
+      word-break: break-word;
     }
     .typing {
       display: inline-flex;
@@ -287,6 +366,27 @@ export function renderChatPage(): string {
       padding: 0.35rem 1rem;
       min-height: 1.4rem;
     }
+    .tick-banner {
+      margin: 0.35rem 1rem 0;
+      padding: 0.55rem 0.85rem;
+      border-radius: 10px;
+      background: #1a2332;
+      border: 1px solid #4c6ef733;
+      color: #91a7ff;
+      font-size: 0.82rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .tick-banner[hidden] { display: none !important; }
+    .tick-banner .pulse {
+      color: #748ffc;
+      animation: tickPulse 1.4s ease-in-out infinite;
+    }
+    @keyframes tickPulse {
+      0%, 100% { opacity: 0.35; }
+      50% { opacity: 1; }
+    }
     .sol-actions { display: flex; gap: 0.5rem; margin-top: 0.85rem; }
     .sol-actions button { flex: 1; margin: 0; }
     .skeleton {
@@ -343,9 +443,14 @@ export function renderChatPage(): string {
     <div style="flex:1;min-width:0">
       <h1 id="headerTitle">Maximus</h1>
       <div class="meta" id="meta">Autonomous core</div>
+      <div class="model-badge" id="modelBadge" hidden aria-live="polite">
+        <span class="dot" aria-hidden="true"></span>
+        <span id="modelBadgeText"></span>
+      </div>
     </div>
     <span class="role-badge" id="roleBadge" style="display:none"></span>
     <button class="icon-btn danger-btn" id="deleteChatBtn" style="display:none" type="button" title="Delete chat" aria-label="Delete chat">🗑</button>
+    <a class="text-btn" id="dashboardLink" href="/dashboard" style="text-decoration:none;display:inline-flex;align-items:center">Status</a>
     <button class="text-btn" id="newChatBtn" style="display:none" type="button">+ New</button>
   </header>
 
@@ -368,6 +473,10 @@ export function renderChatPage(): string {
   </section>
 
   <section class="screen" id="chatScreen">
+    <div class="tick-banner" id="tickBanner" hidden>
+      <span class="pulse" aria-hidden="true">●</span>
+      <span>Maximus is running a background thinking tick…</span>
+    </div>
     <div class="status-line" id="streamStatus"></div>
     <div id="messages"></div>
     <form id="composer">
@@ -446,10 +555,15 @@ export function renderChatPage(): string {
     const chatScreen = document.getElementById("chatScreen");
     const headerTitle = document.getElementById("headerTitle");
     const metaEl = document.getElementById("meta");
+    const modelBadge = document.getElementById("modelBadge");
+    const modelBadgeText = document.getElementById("modelBadgeText");
+    let lastReplyModelLabel = null;
     const backBtn = document.getElementById("backBtn");
     const newChatBtn = document.getElementById("newChatBtn");
     const deleteChatBtn = document.getElementById("deleteChatBtn");
     const streamStatus = document.getElementById("streamStatus");
+    const tickBanner = document.getElementById("tickBanner");
+    let activityPollTimer = null;
     const solModal = document.getElementById("solModal");
     let pendingSolId = null;
     const threadList = document.getElementById("threadList");
@@ -462,6 +576,36 @@ export function renderChatPage(): string {
     const deleteConfirmModal = document.getElementById("deleteConfirmModal");
     const roleBadge = document.getElementById("roleBadge");
     let typingEl = null;
+
+    function updateTickBanner(data) {
+      if (!tickBanner || !data) return;
+      tickBanner.hidden = !(data.agent_busy && data.busy_reason === "tick");
+    }
+
+    async function pollAgentActivity() {
+      try {
+        const res = await fetch("/status");
+        const data = await res.json();
+        updateTickBanner(data);
+        return data;
+      } catch {
+        return null;
+      }
+    }
+
+    function startActivityPoll() {
+      if (activityPollTimer) return;
+      pollAgentActivity();
+      activityPollTimer = setInterval(pollAgentActivity, 5000);
+    }
+
+    function stopActivityPoll() {
+      if (activityPollTimer) {
+        clearInterval(activityPollTimer);
+        activityPollTimer = null;
+      }
+      if (tickBanner) tickBanner.hidden = true;
+    }
 
     function showToast(msg, kind) {
       const host = document.getElementById("toastHost");
@@ -575,6 +719,26 @@ export function renderChatPage(): string {
       return data;
     }
 
+    function modelLabelFromStatus(llm) {
+      if (!llm) return null;
+      if (llm.label) return llm.label;
+      if (llm.provider && llm.model) return llm.provider + "/" + llm.model;
+      return null;
+    }
+
+    function setModelBadge(label, source) {
+      if (!label) {
+        modelBadge.hidden = true;
+        return;
+      }
+      modelBadge.hidden = false;
+      modelBadgeText.textContent = label;
+      modelBadge.title =
+        source === "reply"
+          ? "Model used for the last reply"
+          : "Last model used by Maximus";
+    }
+
     async function loadStatusMeta() {
       try {
         const res = await fetch("/status");
@@ -582,6 +746,10 @@ export function renderChatPage(): string {
         const bal = data.wallet_balance_sol != null ? data.wallet_balance_sol.toFixed(4) + " SOL" : "—";
         const rolePart = sessionLabel ? sessionLabel + " · " : "";
         metaEl.textContent = rolePart + "Tick #" + data.tick_number + " · " + bal;
+        updateTickBanner(data);
+        if (!lastReplyModelLabel) {
+          setModelBadge(modelLabelFromStatus(data.active_llm), "status");
+        }
       } catch {
         metaEl.textContent = sessionLabel || "Maximus";
       }
@@ -616,7 +784,78 @@ export function renderChatPage(): string {
     }
 
     function escapeHtml(s) {
-      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    }
+
+    function formatMessage(text) {
+      if (!text) return "";
+      const codeBlocks = [];
+      let s = escapeHtml(text);
+
+      s = s.replace(/\`\`\`([\\s\\S]*?)\`\`\`/g, (_, code) => {
+        const i = codeBlocks.length;
+        codeBlocks.push('<pre class="md-pre"><code>' + code.replace(/^\\n+|\\n+$/g, "") + "</code></pre>");
+        return "@@CODE" + i + "@@";
+      });
+
+      s = s.replace(/\`([^\`\\n]+)\`/g, '<code class="md-code">$1</code>');
+      s = s.replace(/\\*\\*([^*\\n]+)\\*\\*/g, "<strong>$1</strong>");
+      s = s.replace(/__([^_\\n]+)__/g, "<strong>$1</strong>");
+      s = s.replace(/\\*([^*\\n]+)\\*/g, "<em>$1</em>");
+      s = s.replace(/_([^_\\n]+)_/g, "<em>$1</em>");
+      s = s.replace(/\\[([^\\]]+)\\]\\((https?:\\/\\/[^)\\s]+)\\)/g,
+        '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+
+      s = s.replace(/^### (.+)$/gm, '<div class="md-heading">$1</div>');
+      s = s.replace(/^## (.+)$/gm, '<div class="md-heading">$1</div>');
+      s = s.replace(/^# (.+)$/gm, '<div class="md-heading">$1</div>');
+
+      s = s.replace(/^(?:[-*•] .+(?:\\n|$))+/gm, (block) => {
+        const items = block.trim().split("\\n").map((line) =>
+          "<li>" + line.replace(/^[-*•]\\s+/, "") + "</li>"
+        ).join("");
+        return '<ul class="md-list">' + items + "</ul>";
+      });
+
+      s = s.replace(/^(?:\\d+\\. .+(?:\\n|$))+/gm, (block) => {
+        const items = block.trim().split("\\n").map((line) =>
+          "<li>" + line.replace(/^\\d+\\.\\s+/, "") + "</li>"
+        ).join("");
+        return '<ol class="md-list">' + items + "</ol>";
+      });
+
+      const paragraphs = s.split(/\\n{2,}/).map((part) => {
+        const trimmed = part.trim();
+        if (!trimmed) return "";
+        if (/^<(ul|ol|pre|div)\\b/.test(trimmed)) return trimmed;
+        return '<p class="md-p">' + trimmed.replace(/\\n/g, "<br>") + "</p>";
+      }).filter(Boolean);
+
+      s = paragraphs.join("");
+      codeBlocks.forEach((block, i) => {
+        s = s.split("@@CODE" + i + "@@").join(block);
+      });
+      return s;
+    }
+
+    function setBubbleContent(div, text, kind) {
+      if (kind === "you") {
+        div.textContent = text;
+        delete div.dataset.raw;
+        return;
+      }
+      div.dataset.raw = text;
+      div.innerHTML = formatMessage(text);
+    }
+
+    function appendBubbleToken(div, token) {
+      const raw = (div.dataset.raw || "") + (token || "");
+      div.dataset.raw = raw;
+      div.textContent = raw;
+    }
+
+    function divHasText(div) {
+      return Boolean((div.dataset.raw || div.textContent || "").trim());
     }
 
     async function openThread(thread) {
@@ -636,7 +875,9 @@ export function renderChatPage(): string {
       headerTitle.textContent = thread.title;
       deleteChatBtn.style.display =
         sessionRole === "creative" && thread.id !== 1 ? "inline-flex" : "none";
+      lastReplyModelLabel = null;
       showScreen("chat");
+      await loadStatusMeta();
       await loadThreadMessages();
       input.focus();
     }
@@ -665,7 +906,7 @@ export function renderChatPage(): string {
       wrap.className = "bubble-wrap " + kind;
       const div = document.createElement("div");
       div.className = "bubble " + kind;
-      div.textContent = text;
+      setBubbleContent(div, text, kind);
       wrap.appendChild(div);
       messagesEl.appendChild(wrap);
       messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -735,9 +976,16 @@ export function renderChatPage(): string {
           buffer += decoder.decode(value, { stream: true });
           buffer = parseSseChunk(buffer, (event, data) => {
             if (event === "status") streamStatus.textContent = data.message || "";
+            if (event === "model") {
+              const label = data.label || (data.provider && data.model ? data.provider + "/" + data.model : null);
+              if (label) {
+                lastReplyModelLabel = label;
+                setModelBadge(label, "reply");
+              }
+            }
             if (event === "token") {
               if (!gotToken) { hideTyping(); gotToken = true; }
-              replyBubble.textContent += data.text || "";
+              appendBubbleToken(replyBubble, data.text || "");
               messagesEl.scrollTop = messagesEl.scrollHeight;
             }
             if (event === "pending_send" && window.__canSolApprove) {
@@ -745,8 +993,15 @@ export function renderChatPage(): string {
             }
             if (event === "done") {
               hideTyping();
-              if (!replyBubble.textContent.trim()) replyBubble.textContent = data.response || "";
+              setBubbleContent(replyBubble, data.response || div.dataset.raw || "", "maximus");
               streamStatus.textContent = "";
+              const label =
+                data.model_label ||
+                (data.provider && data.model ? data.provider + "/" + data.model : null);
+              if (label) {
+                lastReplyModelLabel = label;
+                setModelBadge(label, "reply");
+              }
               loadThreads();
             }
           });
@@ -755,7 +1010,7 @@ export function renderChatPage(): string {
         loadStatusMeta();
       } catch (err) {
         hideTyping();
-        replyBubble.textContent = "Something went wrong. Try again.";
+        setBubbleContent(replyBubble, "Something went wrong. Try again.", "maximus");
         showToast(err.message || "Message failed", "error");
       } finally {
         setSending(false);
@@ -823,6 +1078,7 @@ export function renderChatPage(): string {
     };
 
     async function enterAfterUnlock() {
+      startActivityPoll();
       await loadStatusMeta();
       if (sessionRole === "friend") {
         const res = await fetch("/threads", { headers: authHeaders(0) });
@@ -851,10 +1107,11 @@ export function renderChatPage(): string {
       try {
         await loadSession();
       } catch {
-        sessionStorage.removeItem(SITE_KEY);
-        sessionRole = null;
-        sessionLabel = "";
-        applyRoleUi();
+      sessionStorage.removeItem(SITE_KEY);
+      sessionRole = null;
+      sessionLabel = "";
+      stopActivityPoll();
+      applyRoleUi();
         err.textContent = "Invalid access code";
         btn.disabled = false;
         return;
@@ -950,10 +1207,11 @@ export function renderChatPage(): string {
         await loadSession();
         await enterAfterUnlock();
       } catch {
-        sessionStorage.removeItem(SITE_KEY);
-        sessionRole = null;
-        sessionLabel = "";
-        applyRoleUi();
+      sessionStorage.removeItem(SITE_KEY);
+      sessionRole = null;
+      sessionLabel = "";
+      stopActivityPoll();
+      applyRoleUi();
       }
     })();
 
@@ -965,4 +1223,5 @@ export function renderChatPage(): string {
   </script>
 </body>
 </html>`;
+  return chatPageCache;
 }

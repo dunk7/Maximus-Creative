@@ -20,7 +20,7 @@ export function runStartupRepair(): void {
     .get() as { value: string } | undefined;
 
   if (config.repoRoot === "/opt/maximus") {
-    // Production VM: always enforce 1h ticks in DB on every startup
+    // Production VM: enforce default tick interval in DB on every startup
     const target = String(DEFAULT_TICK_INTERVAL_MS);
     if (!override || override.value !== target) {
       setRuntimeSetting(db, "tick_interval_ms", target);

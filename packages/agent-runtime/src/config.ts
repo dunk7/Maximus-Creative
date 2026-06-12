@@ -41,7 +41,7 @@ export function loadConfig(_cwd = process.cwd()): RuntimeConfig {
     grokApiKey: process.env.GROK_API_KEY ?? process.env.XAI_API_KEY ?? "",
     openaiApiKey: process.env.OPENAI_API_KEY ?? "",
     anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
-    tickIntervalMs: Number(process.env.TICK_INTERVAL_MS ?? 900000),
+    tickIntervalMs: Number(process.env.TICK_INTERVAL_MS ?? 1_800_000),
     wakePort: Number(process.env.WAKE_PORT ?? 4747),
     wakeSecret: process.env.WAKE_SECRET ?? process.env.CREATIVE_PASSWORD ?? "maximus-dev-secret",
     creativePassword:

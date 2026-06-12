@@ -9,7 +9,8 @@ import {
   loadConfig,
   type RuntimeConfig,
 } from "@maximus/agent-runtime";
-import { getBalanceSol, getWalletPubkey } from "@maximus/tools";
+import { getAgentBusyState } from "./agent-lock.js";
+import { loadWalletSnapshot } from "./wallet-snapshot.js";
 
 export interface AgentStatus {
   ok: true;
@@ -35,40 +36,55 @@ export interface AgentStatus {
   last_llm_error: string | null;
   recent_journal: ReturnType<typeof listJournal>;
   recent_messages: ReturnType<typeof listCreatorMessages>;
+  agent_busy: boolean;
+  busy_reason: "tick" | "chat" | null;
 }
 
 const startedAt = Date.now();
+const STATUS_CACHE_MS = Number(process.env.STATUS_CACHE_MS ?? 15_000);
 
-export async function buildAgentStatus(db: Database.Database): Promise<AgentStatus> {
+let statusCache: {
+  at: number;
+  data: Omit<AgentStatus, "uptime_seconds" | "agent_busy" | "busy_reason">;
+} | null = null;
+
+export function invalidateStatusCache(): void {
+  statusCache = null;
+}
+
+export async function buildAgentStatus(
+  db: Database.Database,
+  options?: { fresh?: boolean }
+): Promise<AgentStatus> {
+  const now = Date.now();
+  if (!options?.fresh && statusCache && now - statusCache.at < STATUS_CACHE_MS) {
+    const busy = getAgentBusyState();
+    return {
+      ...statusCache.data,
+      uptime_seconds: Math.floor((now - startedAt) / 1000),
+      agent_busy: busy.busy,
+      busy_reason: busy.reason,
+    };
+  }
+
   const config = loadConfig();
   const identity = db.prepare("SELECT name, mission FROM identity WHERE id = 1").get() as
     | { name: string; mission: string }
     | undefined;
-  const pubkey = getWalletPubkey(config);
-  let balance: number | null = null;
-
-  if (pubkey) {
-    try {
-      balance = await getBalanceSol(config, pubkey);
-    } catch {
-      balance = null;
-    }
-  }
-
+  const wallet = await loadWalletSnapshot(config);
   const memoryCount = db.prepare("SELECT COUNT(*) as c FROM memories").get() as { c: number };
 
-  return {
+  const data: Omit<AgentStatus, "uptime_seconds" | "agent_busy" | "busy_reason"> = {
     ok: true,
     agent: "Maximus",
-    uptime_seconds: Math.floor((Date.now() - startedAt) / 1000),
     tick_number: getMeta(db, "tick_number") ?? "0",
     last_tick_at: getMeta(db, "last_tick_at"),
     last_snapshot_path: getMeta(db, "last_snapshot_path"),
     last_ipfs_cid: getMeta(db, "last_ipfs_cid"),
     last_migration_bundle: getMeta(db, "last_migration_bundle"),
     identity: identity ?? null,
-    wallet_pubkey: pubkey,
-    wallet_balance_sol: balance,
+    wallet_pubkey: wallet.pubkey,
+    wallet_balance_sol: wallet.balanceSol,
     active_goals: listGoals(db, "active").length,
     memory_count: memoryCount.c,
     active_llm: {
@@ -81,6 +97,15 @@ export async function buildAgentStatus(db: Database.Database): Promise<AgentStat
     last_llm_error: getMeta(db, "last_llm_error"),
     recent_journal: listJournal(db, 5),
     recent_messages: listCreatorMessages(db, 5),
+  };
+
+  statusCache = { at: now, data };
+  const busy = getAgentBusyState();
+  return {
+    ...data,
+    uptime_seconds: Math.floor((now - startedAt) / 1000),
+    agent_busy: busy.busy,
+    busy_reason: busy.reason,
   };
 }
 

@@ -2,7 +2,7 @@
 export const MIN_TICK_INTERVAL_MS = 60_000;
 
 /** Sane default for 1GB Oracle micro VM. */
-export const DEFAULT_TICK_INTERVAL_MS = 3_600_000;
+export const DEFAULT_TICK_INTERVAL_MS = 1_800_000;
 
 export const PROTECTED_EDIT_PATHS = [
   "package.json",

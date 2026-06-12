@@ -563,10 +563,10 @@ export function createToolExecutor(
         const goalId = args.goal_id != null ? Number(args.goal_id) : undefined;
         const maxSteps =
           args.max_steps != null ? Math.min(Math.max(1, Number(args.max_steps)), 60) : undefined;
-        const defaultTimeout = tickMode ? 4 : 8;
+        const defaultTimeout = tickMode ? 4 : 2;
         const timeoutMinutes =
           args.timeout_minutes != null
-            ? Math.min(Math.max(1, Number(args.timeout_minutes)), tickMode ? 4 : 15)
+            ? Math.min(Math.max(1, Number(args.timeout_minutes)), tickMode ? 4 : 2)
             : defaultTimeout;
 
         const innerExecutor = createToolExecutor(db, config, keypair, role, { tickMode: false });

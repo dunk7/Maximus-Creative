@@ -1,6 +1,8 @@
 import type Database from "better-sqlite3";
+import { getMeta } from "./db.js";
 import { getIdentity } from "./identity.js";
 import { callLlm, type CallLlmOptions, type ChatMessage } from "./llm.js";
+import type { LlmCallResult } from "./llm-router.js";
 import { listMemories, searchMemories } from "./memory.js";
 import {
   addCreatorMessage,
@@ -17,13 +19,29 @@ export interface ChatResult {
   id: number;
   message: string;
   response: string;
+  model_label?: string;
+  model?: string;
+  provider?: string;
 }
 
 export type ChatStreamEvent =
   | { type: "status"; message: string }
+  | { type: "model"; label: string; model: string; provider: string }
   | { type: "token"; text: string }
   | { type: "pending_send"; id: number; to: string; amount_sol: number }
-  | { type: "done"; response: string; message_id: number };
+  | {
+      type: "done";
+      response: string;
+      message_id: number;
+      model_label?: string;
+      model?: string;
+      provider?: string;
+    };
+
+interface ChatReplyWithModel {
+  reply: string;
+  model: LlmCallResult | null;
+}
 
 export interface WalletSnapshot {
   pubkey: string | null;
@@ -179,9 +197,10 @@ async function runChatWithTools(
   userMessage: string,
   maxSteps = 8,
   onTool?: (name: string, result: string) => void
-): Promise<string> {
+): Promise<ChatReplyWithModel> {
   let reply = "";
   let usedTools = false;
+  let lastModel: LlmCallResult | null = null;
 
   for (let step = 0; step < maxSteps; step++) {
     const routing: CallLlmOptions = {
@@ -193,6 +212,7 @@ async function runChatWithTools(
       },
     };
     const response = await callLlm(config, db, budgetChatMessages(messages), tools, routing);
+    if (response.meta) lastModel = response.meta;
     if (!isPlaceholderReply(response.content)) reply = response.content.trim();
 
     if (response.toolCalls.length === 0) break;
@@ -225,6 +245,18 @@ async function runChatWithTools(
   if (usedTools || isPlaceholderReply(reply)) {
     const synthesized = await synthesizeReply(config, db, messages, userMessage);
     if (!isPlaceholderReply(synthesized)) reply = synthesized;
+    const provider = getMeta(db, "active_llm_provider");
+    const model = getMeta(db, "active_llm_model");
+    const label = getMeta(db, "active_llm_label");
+    if (provider && model && label) {
+      lastModel = {
+        provider: provider as LlmCallResult["provider"],
+        model,
+        label,
+        attempt: Number(getMeta(db, "last_llm_attempt") ?? 1),
+        fallbacksUsed: Number(getMeta(db, "last_llm_fallbacks") ?? 0),
+      };
+    }
   }
 
   if (isPlaceholderReply(reply)) {
@@ -234,10 +266,14 @@ async function runChatWithTools(
   if (isPlaceholderReply(reply)) {
     const routing: CallLlmOptions = { routing: { purpose: "chat", userMessage } };
     const direct = await callLlm(config, db, budgetChatMessages(messages), [], routing);
+    if (direct.meta) lastModel = direct.meta;
     if (!isPlaceholderReply(direct.content)) reply = direct.content.trim();
   }
 
-  return reply || "I hit a snag forming a reply — try asking again.";
+  return {
+    reply: reply || "I hit a snag forming a reply — try asking again.",
+    model: lastModel,
+  };
 }
 
 export async function runCreatorChat(
@@ -264,13 +300,20 @@ export async function runCreatorChat(
 
   const routing: CallLlmOptions = { routing: { purpose: "chat", userMessage: trimmed, toolsOffered: tools.length } };
 
-  const reply =
-    tools.length > 0 && executeTool
-      ? await runChatWithTools(config, db, messages, tools, executeTool, trimmed)
-      : (
-          await callLlm(config, db, budgetChatMessages(messages), [], routing)
-        ).content.trim() ||
-        "I'm here. I received your message but couldn't form a reply this time.";
+  let reply: string;
+  let model: LlmCallResult | null = null;
+
+  if (tools.length > 0 && executeTool) {
+    const result = await runChatWithTools(config, db, messages, tools, executeTool, trimmed);
+    reply = result.reply;
+    model = result.model;
+  } else {
+    const response = await callLlm(config, db, budgetChatMessages(messages), [], routing);
+    model = response.meta ?? null;
+    reply =
+      response.content.trim() ||
+      "I'm here. I received your message but couldn't form a reply this time.";
+  }
 
   answerCreatorMessage(db, pending.id, reply);
   autoTitleChatThread(db, threadId, trimmed);
@@ -279,22 +322,90 @@ export async function runCreatorChat(
     id: pending.id,
     message: trimmed,
     response: reply,
+    model_label: model?.label,
+    model: model?.model,
+    provider: model?.provider,
   };
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+export interface ChatGenerateResult {
+  reply: string;
+  model: LlmCallResult | null;
+  messageId: number;
 }
 
-async function emitReplyTokens(
-  emit: (event: ChatStreamEvent) => void,
-  text: string
-): Promise<void> {
+function emitReplyTokens(emit: (event: ChatStreamEvent) => void, text: string): void {
   const parts = text.match(/\S+|\s+/g) ?? [text];
   for (const part of parts) {
     emit({ type: "token", text: part });
-    if (part.trim()) await sleep(18);
   }
+}
+
+export function streamChatReply(
+  emit: (event: ChatStreamEvent) => void,
+  result: ChatGenerateResult
+): void {
+  if (result.model) {
+    emit({
+      type: "model",
+      label: result.model.label,
+      model: result.model.model,
+      provider: result.model.provider,
+    });
+  }
+  emitReplyTokens(emit, result.reply);
+  emit({
+    type: "done",
+    response: result.reply,
+    message_id: result.messageId,
+    model_label: result.model?.label,
+    model: result.model?.model,
+    provider: result.model?.provider,
+  });
+}
+
+export async function generateCreatorChatReply(
+  db: Database.Database,
+  config: RuntimeConfig,
+  userMessage: string,
+  wallet: WalletSnapshot,
+  tools: ToolDefinition[],
+  executeTool: ToolExecutor,
+  threadId: number,
+  role: UserRole = "creative",
+  onEvent?: (event: ChatStreamEvent) => void
+): Promise<ChatGenerateResult> {
+  const trimmed = userMessage.trim();
+  const pending = addCreatorMessage(db, trimmed, "pending", threadId);
+  const history = listCreatorMessages(db, MAX_HISTORY_TURNS, threadId).filter((row) => row.id !== pending.id);
+
+  const messages: ChatMessage[] = [
+    { role: "system", content: buildConversationPrompt(db, wallet, trimmed, role) },
+    ...historyToMessages(history),
+    { role: "user", content: trimmed },
+  ];
+
+  onEvent?.({ type: "status", message: "Thinking..." });
+
+  const { reply, model } = await runChatWithTools(config, db, messages, tools, executeTool, trimmed, 8, (name, result) => {
+    onEvent?.({ type: "status", message: `Running ${name}...` });
+    if (name === "solana_send") {
+      const parsed = parsePendingSend(result);
+      if (parsed) {
+        onEvent?.({
+          type: "pending_send",
+          id: parsed.id,
+          to: parsed.to,
+          amount_sol: parsed.amount,
+        });
+      }
+    }
+  });
+
+  answerCreatorMessage(db, pending.id, reply);
+  autoTitleChatThread(db, threadId, trimmed);
+
+  return { reply, model, messageId: pending.id };
 }
 
 export async function runCreatorChatStream(
@@ -308,35 +419,18 @@ export async function runCreatorChatStream(
   emit: (event: ChatStreamEvent) => void,
   role: UserRole = "creative"
 ): Promise<void> {
-  const trimmed = userMessage.trim();
-  const pending = addCreatorMessage(db, trimmed, "pending", threadId);
-  const history = listCreatorMessages(db, MAX_HISTORY_TURNS, threadId).filter((row) => row.id !== pending.id);
-
-  const messages: ChatMessage[] = [
-    { role: "system", content: buildConversationPrompt(db, wallet, trimmed, role) },
-    ...historyToMessages(history),
-    { role: "user", content: trimmed },
-  ];
-
-  emit({ type: "status", message: "Thinking..." });
-
-  const reply = await runChatWithTools(config, db, messages, tools, executeTool, trimmed, 8, (name, result) => {
-    emit({ type: "status", message: `Running ${name}...` });
-    if (name === "solana_send") {
-      const parsed = parsePendingSend(result);
-      if (parsed) {
-        emit({
-          type: "pending_send",
-          id: parsed.id,
-          to: parsed.to,
-          amount_sol: parsed.amount,
-        });
-      }
+  const result = await generateCreatorChatReply(
+    db,
+    config,
+    userMessage,
+    wallet,
+    tools,
+    executeTool,
+    threadId,
+    role,
+    (event) => {
+      if (event.type === "status" || event.type === "pending_send") emit(event);
     }
-  });
-
-  await emitReplyTokens(emit, reply);
-  answerCreatorMessage(db, pending.id, reply);
-  autoTitleChatThread(db, threadId, trimmed);
-  emit({ type: "done", response: reply, message_id: pending.id });
+  );
+  streamChatReply(emit, result);
 }

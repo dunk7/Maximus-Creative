@@ -44,8 +44,20 @@ if [ -z "$MESSAGE" ]; then
   exit 1
 fi
 
-curl -s -X POST "$URL/chat" \
+curl -sS -X POST "$URL/chat" \
   -H "Authorization: Bearer $SECRET" \
   -H "Content-Type: application/json" \
   -d "$(python3 -c 'import json,sys; print(json.dumps({"message": sys.argv[1]}))' "$MESSAGE")" \
-  | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("response") or d.get("error") or d)'
+  | python3 -c '
+import sys, json
+raw = sys.stdin.read().strip()
+if not raw:
+    print("No response from Maximus (service down or overloaded). Run: ./scripts/stabilize-vm.sh", file=sys.stderr)
+    sys.exit(1)
+try:
+    d = json.loads(raw)
+except json.JSONDecodeError:
+    print("Bad response (not JSON):", raw[:300], file=sys.stderr)
+    sys.exit(1)
+print(d.get("response") or d.get("error") or d)
+'

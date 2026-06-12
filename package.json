@@ -17,5 +17,9 @@
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "overrides": {
+    "uuid": "8.3.2"
+  },
+  "postinstall": "bash scripts/fix-uuid.sh"
 }

@@ -49,7 +49,7 @@ export async function runChat(message: string): Promise<void> {
     const executeTool = createToolExecutor(db, config, keypair);
     const result = await runCreatorChat(db, config, trimmed, wallet, tools, executeTool, 1);
     console.log(result.response);
-  });
+  }, { reason: "chat" });
 }
 
 export async function printMessages(limit = 20): Promise<void> {

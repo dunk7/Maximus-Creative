@@ -7,7 +7,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "genesis": "node --env-file=../../.env --import tsx ./src/cli.ts genesis",
-    "start": "node --env-file=../../.env --import tsx ./src/cli.ts start",
+    "start": "../../scripts/start-maximus.sh",
     "tick-once": "node --env-file=../../.env --import tsx ./src/cli.ts tick-once",
     "status": "node --env-file=../../.env --import tsx ./src/cli.ts status",
     "chat": "node --env-file=../../.env --import tsx ./src/cli.ts chat",
