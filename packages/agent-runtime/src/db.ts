@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
+import { migratePendingSends } from "./pending-sends.js";
+import { migrateChatThreads } from "./threads.js";
 import type { RuntimeConfig } from "./types.js";
 
 let dbInstance: Database.Database | null = null;
@@ -65,7 +67,21 @@ export function openDatabase(config: RuntimeConfig): Database.Database {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS creator_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      thread_id INTEGER,
+      content TEXT NOT NULL,
+      response TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      tick_number INTEGER,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      responded_at TEXT
+    );
   `);
+
+  migrateChatThreads(db);
+  migratePendingSends(db);
 
   dbInstance = db;
   return db;

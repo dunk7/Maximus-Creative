@@ -41,12 +41,20 @@ export interface RuntimeConfig {
   walletPath: string;
   creatorIntentPath: string;
   genesisArchivePath: string;
-  llmProvider: "openai" | "anthropic";
+  llmProvider: "openai" | "anthropic" | "google" | "grok";
   llmApiKey: string;
   llmModel: string;
+  llmAuto: boolean;
+  googleApiKey: string;
+  grokApiKey: string;
+  openaiApiKey: string;
+  anthropicApiKey: string;
   tickIntervalMs: number;
   wakePort: number;
   wakeSecret: string;
+  creativePassword: string;
+  familyPassword: string;
+  friendPassword: string;
   solanaRpcUrl: string;
 }
 
@@ -67,6 +75,7 @@ export interface TickContext {
   goals: GoalRow[];
   recentMemories: MemoryRow[];
   recentJournal: JournalRow[];
+  pendingCreatorMessages: import("./messages.js").CreatorMessageRow[];
   walletPubkey: string | null;
   walletBalanceSol: number | null;
   creatorIntentAvailable: boolean;
@@ -76,4 +85,5 @@ export interface TickResult {
   summary: string;
   toolCalls: number;
   restartRequested: boolean;
+  replyText: string;
 }

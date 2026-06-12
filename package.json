@@ -8,8 +8,12 @@
   "scripts": {
     "core": "npm run start --workspace=@maximus/core",
     "genesis": "npm run genesis --workspace=@maximus/core",
+    "web": "npm run dev --workspace=@maximus/web",
+    "supervisor": "./scripts/supervisor.sh",
     "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "talk": "./scripts/talk.sh",
+    "messages": "./scripts/talk.sh --history"
   },
   "engines": {
     "node": ">=20"

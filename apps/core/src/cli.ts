@@ -1,3 +1,4 @@
+import { runChat, printMessages } from "./chat.js";
 import { runGenesisBoot } from "./genesis.js";
 import { printStatus, runSingleTick, startImmortalLoop } from "./loop.js";
 
@@ -15,7 +16,13 @@ async function main(): Promise<void> {
       await runSingleTick();
       break;
     case "status":
-      printStatus();
+      await printStatus();
+      break;
+    case "chat":
+      await runChat(process.argv.slice(3).join(" "));
+      break;
+    case "messages":
+      await printMessages();
       break;
     default:
       console.error(`Unknown command: ${command}`);

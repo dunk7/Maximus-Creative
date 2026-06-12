@@ -1,0 +1,968 @@
+export function renderChatPage(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#09090f">
+  <title>Maximus</title>
+  <style>
+    :root {
+      --bg: #09090f;
+      --surface: #12121a;
+      --surface-2: #1a1a26;
+      --border: #2a2a38;
+      --text: #ececf1;
+      --text-muted: #8b8b9a;
+      --accent: #4c6ef5;
+      --accent-soft: #4c6ef522;
+      --you: #4c6ef5;
+      --you-text: #fff;
+      --maximus: #1e1e2a;
+      --danger: #e03131;
+      --radius: 16px;
+      --radius-sm: 10px;
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --header-h: 56px;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      font-size: 16px;
+      line-height: 1.5;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      letter-spacing: -0.01em;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      padding: calc(0.65rem + var(--safe-top)) 1rem 0.65rem;
+      min-height: calc(var(--header-h) + var(--safe-top));
+      border-bottom: 1px solid var(--border);
+      background: color-mix(in srgb, var(--surface) 92%, transparent);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1.05rem;
+      font-weight: 650;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .meta {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-top: 0.1rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .role-badge {
+      flex-shrink: 0;
+      font-size: 0.62rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 0.28rem 0.5rem;
+      border-radius: 999px;
+      background: var(--surface-2);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+    .role-badge.creative { background: var(--accent-soft); color: #91a7ff; border-color: #4c6ef544; }
+    .role-badge.family { background: #2d6a4f22; color: #8fd4a8; border-color: #2d6a4f44; }
+    .role-badge.friend { background: #49505722; color: #adb5bd; border-color: #49505744; }
+    .icon-btn, .text-btn {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font: inherit;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .icon-btn:active, .text-btn:active { transform: scale(0.96); }
+    .icon-btn {
+      width: 40px;
+      height: 40px;
+      font-size: 1.15rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .text-btn {
+      padding: 0.55rem 0.9rem;
+      font-weight: 600;
+      font-size: 0.88rem;
+      background: var(--accent);
+      border: none;
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .text-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+    .screen { flex: 1; display: none; flex-direction: column; min-height: 0; }
+    .screen.active { display: flex; }
+    .centered {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      padding-bottom: calc(1.5rem + var(--safe-bottom));
+    }
+    .card {
+      width: 100%;
+      max-width: 400px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 1.5rem;
+      box-shadow: 0 8px 32px #00000055;
+    }
+    .card h2, .card h3 { margin: 0 0 0.35rem; font-weight: 650; }
+    .card .subtitle { color: var(--text-muted); font-size: 0.9rem; margin: 0 0 1.25rem; }
+    label { display: block; font-size: 0.8rem; font-weight: 500; color: var(--text-muted); margin-bottom: 0.4rem; }
+    input, textarea, button.field-btn {
+      width: 100%;
+      font: inherit;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      padding: 0.8rem 0.9rem;
+    }
+    input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
+    button.field-btn {
+      margin-top: 0.85rem;
+      background: var(--accent);
+      border: none;
+      font-weight: 600;
+      color: #fff;
+      cursor: pointer;
+    }
+    button.field-btn:disabled { opacity: 0.5; }
+    .error { color: #ff8787; font-size: 0.82rem; margin-top: 0.55rem; }
+    .check-row { display: flex; align-items: center; gap: 0.55rem; margin: 0.85rem 0; font-size: 0.9rem; }
+    .thread-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.75rem;
+      padding-bottom: calc(0.75rem + var(--safe-bottom));
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      -webkit-overflow-scrolling: touch;
+    }
+    .thread-item {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.95rem 1.05rem;
+      color: inherit;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .thread-item:hover { border-color: #3a3a4a; }
+    .thread-item:active { background: var(--surface-2); }
+    .thread-title { font-weight: 600; font-size: 0.95rem; display: flex; align-items: center; gap: 0.4rem; }
+    .thread-preview {
+      font-size: 0.84rem;
+      color: var(--text-muted);
+      margin-top: 0.3rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .thread-meta { font-size: 0.72rem; color: #5c5c6e; margin-top: 0.35rem; }
+    .lock { font-size: 0.85em; }
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      -webkit-overflow-scrolling: touch;
+    }
+    .bubble-wrap { display: flex; flex-direction: column; max-width: 85%; }
+    .bubble-wrap.you { align-self: flex-end; align-items: flex-end; }
+    .bubble-wrap.maximus { align-self: flex-start; align-items: flex-start; }
+    .bubble {
+      padding: 0.7rem 0.95rem;
+      border-radius: 18px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 0.95rem;
+    }
+    .bubble.you {
+      background: var(--you);
+      color: var(--you-text);
+      border-bottom-right-radius: 6px;
+    }
+    .bubble.maximus {
+      background: var(--maximus);
+      border: 1px solid var(--border);
+      border-bottom-left-radius: 6px;
+    }
+    .typing {
+      display: inline-flex;
+      gap: 4px;
+      padding: 0.85rem 1rem;
+      align-self: flex-start;
+    }
+    .typing span {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      animation: bounce 1.2s infinite ease-in-out;
+    }
+    .typing span:nth-child(2) { animation-delay: 0.15s; }
+    .typing span:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes bounce {
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+      30% { transform: translateY(-5px); opacity: 1; }
+    }
+    #composer {
+      padding: 0.65rem 0.75rem;
+      padding-bottom: calc(0.65rem + var(--safe-bottom));
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      gap: 0.5rem;
+      align-items: flex-end;
+    }
+    #composer textarea {
+      flex: 1;
+      resize: none;
+      min-height: 44px;
+      max-height: 140px;
+      font: inherit;
+      font-size: 0.95rem;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      padding: 0.7rem 1rem;
+      line-height: 1.4;
+      overflow-y: auto;
+    }
+    #composer button { width: auto; margin: 0; padding: 0.75rem 1.1rem; border-radius: 20px; min-width: 68px; }
+    #composer button.sending { background: #364fc7; }
+    .modal {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.72);
+      backdrop-filter: blur(4px);
+      display: none; align-items: center; justify-content: center;
+      padding: 1rem;
+      padding-bottom: calc(1rem + var(--safe-bottom));
+      z-index: 50;
+    }
+    .modal.open { display: flex; }
+    .empty { text-align: center; color: var(--text-muted); padding: 3rem 1.5rem; font-size: 0.92rem; }
+    .danger-btn { background: var(--danger) !important; border: none !important; }
+    .status-line {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      text-align: center;
+      padding: 0.35rem 1rem;
+      min-height: 1.4rem;
+    }
+    .sol-actions { display: flex; gap: 0.5rem; margin-top: 0.85rem; }
+    .sol-actions button { flex: 1; margin: 0; }
+    .skeleton {
+      background: linear-gradient(90deg, var(--surface) 25%, var(--surface-2) 50%, var(--surface) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.2s infinite;
+      border-radius: var(--radius-sm);
+    }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+    .sk-thread { height: 72px; border-radius: var(--radius); margin-bottom: 0.5rem; }
+    .sk-bubble { height: 48px; width: 70%; margin-bottom: 0.5rem; border-radius: 18px; }
+    .sk-bubble.you { align-self: flex-end; width: 55%; }
+    #toastHost {
+      position: fixed;
+      bottom: calc(1rem + var(--safe-bottom));
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      pointer-events: none;
+      width: min(420px, calc(100% - 2rem));
+    }
+    .toast {
+      background: #2b2b3a;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.75rem 1rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.88rem;
+      box-shadow: 0 4px 20px #00000066;
+      pointer-events: auto;
+      animation: toastIn 0.25s ease;
+    }
+    .toast.error { border-color: #e0313155; background: #2a1515; color: #ff8787; }
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .logo-mark {
+      width: 44px; height: 44px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, var(--accent), #7950f2);
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 1.2rem; color: #fff;
+      margin: 0 auto 1rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <button class="icon-btn" id="backBtn" style="display:none" type="button" aria-label="Back">←</button>
+    <div style="flex:1;min-width:0">
+      <h1 id="headerTitle">Maximus</h1>
+      <div class="meta" id="meta">Autonomous core</div>
+    </div>
+    <span class="role-badge" id="roleBadge" style="display:none"></span>
+    <button class="icon-btn danger-btn" id="deleteChatBtn" style="display:none" type="button" title="Delete chat" aria-label="Delete chat">🗑</button>
+    <button class="text-btn" id="newChatBtn" style="display:none" type="button">+ New</button>
+  </header>
+
+  <section class="screen active" id="unlockScreen">
+    <div class="centered">
+      <div class="card">
+        <div class="logo-mark">M</div>
+        <h2>Welcome back</h2>
+        <p class="subtitle">Enter your access code to open Maximus</p>
+        <label for="sitePassword">Access code</label>
+        <input id="sitePassword" type="password" autocomplete="current-password" placeholder="••••••••">
+        <button class="field-btn" id="unlockBtn" type="button">Continue</button>
+        <div class="error" id="unlockError"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="screen" id="threadsScreen">
+    <div class="thread-list" id="threadList"></div>
+  </section>
+
+  <section class="screen" id="chatScreen">
+    <div class="status-line" id="streamStatus"></div>
+    <div id="messages"></div>
+    <form id="composer">
+      <textarea id="input" rows="1" placeholder="Message Maximus…" required></textarea>
+      <button class="text-btn" type="submit" id="sendBtn">Send</button>
+    </form>
+  </section>
+
+  <div id="toastHost"></div>
+
+  <div class="modal" id="newChatModal">
+    <div class="card">
+      <h3>New chat</h3>
+      <p class="subtitle">Start a fresh conversation</p>
+      <label for="newTitle">Title</label>
+      <input id="newTitle" placeholder="e.g. Trading ideas">
+      <div class="check-row">
+        <input type="checkbox" id="newPrivate">
+        <label for="newPrivate" style="margin:0">Private (extra password)</label>
+      </div>
+      <div id="newPasswordWrap" style="display:none">
+        <label for="newThreadPassword">Chat password</label>
+        <input id="newThreadPassword" type="password" placeholder="Only you will see this chat">
+      </div>
+      <button class="field-btn" id="createChatBtn" type="button">Create</button>
+      <button class="field-btn" id="cancelNewBtn" type="button" style="background:var(--surface-2);margin-top:0.5rem;border:1px solid var(--border)">Cancel</button>
+      <div class="error" id="newChatError"></div>
+    </div>
+  </div>
+
+  <div class="modal" id="solModal">
+    <div class="card">
+      <h3>Approve SOL send?</h3>
+      <p id="solModalText" class="subtitle" style="margin-bottom:0"></p>
+      <div class="sol-actions">
+        <button class="field-btn" id="solApproveBtn" type="button">Approve</button>
+        <button class="field-btn danger-btn" id="solRejectBtn" type="button">Reject</button>
+      </div>
+      <div class="error" id="solModalError"></div>
+    </div>
+  </div>
+
+  <div class="modal" id="threadUnlockModal">
+    <div class="card">
+      <h3 id="threadUnlockTitle">Private chat</h3>
+      <p class="subtitle">This chat is password protected.</p>
+      <label for="threadPassword">Chat password</label>
+      <input id="threadPassword" type="password">
+      <button class="field-btn" id="threadUnlockBtn" type="button">Unlock</button>
+      <button class="field-btn" id="cancelUnlockBtn" type="button" style="background:var(--surface-2);margin-top:0.5rem;border:1px solid var(--border)">Cancel</button>
+      <div class="error" id="threadUnlockError"></div>
+    </div>
+  </div>
+
+  <div class="modal" id="deleteConfirmModal">
+    <div class="card">
+      <h3>Delete chat?</h3>
+      <p class="subtitle">This cannot be undone.</p>
+      <div class="sol-actions">
+        <button class="field-btn danger-btn" id="confirmDeleteBtn" type="button">Delete</button>
+        <button class="field-btn" id="cancelDeleteBtn" type="button" style="background:var(--surface-2);border:1px solid var(--border)">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SITE_KEY = "maximus_site_password";
+    let currentThread = null;
+    let pendingThread = null;
+    let sessionRole = null;
+    let sessionLabel = "";
+    let isStreaming = false;
+
+    const unlockScreen = document.getElementById("unlockScreen");
+    const threadsScreen = document.getElementById("threadsScreen");
+    const chatScreen = document.getElementById("chatScreen");
+    const headerTitle = document.getElementById("headerTitle");
+    const metaEl = document.getElementById("meta");
+    const backBtn = document.getElementById("backBtn");
+    const newChatBtn = document.getElementById("newChatBtn");
+    const deleteChatBtn = document.getElementById("deleteChatBtn");
+    const streamStatus = document.getElementById("streamStatus");
+    const solModal = document.getElementById("solModal");
+    let pendingSolId = null;
+    const threadList = document.getElementById("threadList");
+    const messagesEl = document.getElementById("messages");
+    const form = document.getElementById("composer");
+    const input = document.getElementById("input");
+    const sendBtn = document.getElementById("sendBtn");
+    const newChatModal = document.getElementById("newChatModal");
+    const threadUnlockModal = document.getElementById("threadUnlockModal");
+    const deleteConfirmModal = document.getElementById("deleteConfirmModal");
+    const roleBadge = document.getElementById("roleBadge");
+    let typingEl = null;
+
+    function showToast(msg, kind) {
+      const host = document.getElementById("toastHost");
+      const el = document.createElement("div");
+      el.className = "toast" + (kind === "error" ? " error" : "");
+      el.textContent = msg;
+      host.appendChild(el);
+      setTimeout(() => el.remove(), 4000);
+    }
+
+    function autoGrowTextarea() {
+      input.style.height = "auto";
+      input.style.height = Math.min(input.scrollHeight, 140) + "px";
+    }
+
+    function applyRoleUi() {
+      const role = sessionRole || "creative";
+      roleBadge.style.display = sessionRole ? "inline-block" : "none";
+      roleBadge.textContent = sessionLabel || role;
+      roleBadge.className = "role-badge " + role;
+      window.__canSolApprove = role === "creative" || role === "family";
+    }
+
+    function showScreen(name) {
+      [unlockScreen, threadsScreen, chatScreen].forEach((el) => el.classList.remove("active"));
+      if (name === "unlock") unlockScreen.classList.add("active");
+      if (name === "threads") threadsScreen.classList.add("active");
+      if (name === "chat") chatScreen.classList.add("active");
+      backBtn.style.display = name === "chat" ? "inline-flex" : "none";
+      deleteChatBtn.style.display =
+        name === "chat" && sessionRole === "creative" && currentThread && currentThread.id !== 1
+          ? "inline-flex"
+          : "none";
+      const canCreate = sessionRole === "creative" || sessionRole === "family";
+      newChatBtn.style.display = name === "threads" && canCreate ? "inline-flex" : "none";
+      if (name !== "chat") streamStatus.textContent = "";
+    }
+
+    function sitePassword() {
+      return sessionStorage.getItem(SITE_KEY) || "";
+    }
+
+    function threadPasswordKey(id) {
+      return "maximus_thread_pw_" + id;
+    }
+
+    function getThreadPassword(id) {
+      return sessionStorage.getItem(threadPasswordKey(id)) || "";
+    }
+
+    function setThreadPassword(id, pw) {
+      if (pw) sessionStorage.setItem(threadPasswordKey(id), pw);
+      else sessionStorage.removeItem(threadPasswordKey(id));
+    }
+
+    function authHeaders(threadId) {
+      const h = {
+        "Authorization": "Bearer " + sitePassword(),
+        "Content-Type": "application/json"
+      };
+      const tp = getThreadPassword(threadId);
+      if (tp) h["X-Thread-Password"] = tp;
+      return h;
+    }
+
+    function formatTime(iso) {
+      try {
+        const d = new Date(iso.replace(" ", "T") + "Z");
+        return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+      } catch { return ""; }
+    }
+
+    function showThreadSkeletons() {
+      threadList.innerHTML = "";
+      for (let i = 0; i < 4; i++) {
+        const sk = document.createElement("div");
+        sk.className = "skeleton sk-thread";
+        threadList.appendChild(sk);
+      }
+    }
+
+    function showMessageSkeletons() {
+      messagesEl.innerHTML = "";
+      for (let i = 0; i < 3; i++) {
+        const sk = document.createElement("div");
+        sk.className = "skeleton sk-bubble" + (i % 2 ? " you" : "");
+        messagesEl.appendChild(sk);
+      }
+    }
+
+    function showTyping() {
+      hideTyping();
+      typingEl = document.createElement("div");
+      typingEl.className = "typing";
+      typingEl.innerHTML = "<span></span><span></span><span></span>";
+      messagesEl.appendChild(typingEl);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function hideTyping() {
+      if (typingEl) { typingEl.remove(); typingEl = null; }
+    }
+
+    async function loadSession() {
+      const res = await fetch("/session", { headers: authHeaders(0) });
+      if (!res.ok) throw new Error("unauthorized");
+      const data = await res.json();
+      sessionRole = data.role;
+      sessionLabel = data.label || data.role;
+      applyRoleUi();
+      return data;
+    }
+
+    async function loadStatusMeta() {
+      try {
+        const res = await fetch("/status");
+        const data = await res.json();
+        const bal = data.wallet_balance_sol != null ? data.wallet_balance_sol.toFixed(4) + " SOL" : "—";
+        const rolePart = sessionLabel ? sessionLabel + " · " : "";
+        metaEl.textContent = rolePart + "Tick #" + data.tick_number + " · " + bal;
+      } catch {
+        metaEl.textContent = sessionLabel || "Maximus";
+      }
+    }
+
+    async function loadThreads() {
+      showThreadSkeletons();
+      const res = await fetch("/threads", { headers: authHeaders(0) });
+      if (!res.ok) throw new Error("Could not load chats");
+      const data = await res.json();
+      threadList.innerHTML = "";
+      const threads = data.threads || [];
+      if (!threads.length) {
+        threadList.innerHTML = '<div class="empty">No chats yet.<br>Tap <strong>+ New</strong> to start.</div>';
+        return;
+      }
+      for (const t of threads) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "thread-item";
+        const lock = t.is_locked ? '<span class="lock">🔒</span>' : "";
+        const preview = t.is_locked
+          ? "Private chat — password required"
+          : (t.preview || "No messages yet");
+        btn.innerHTML =
+          '<div class="thread-title">' + lock + escapeHtml(t.title) + '</div>' +
+          '<div class="thread-preview">' + escapeHtml(preview) + '</div>' +
+          '<div class="thread-meta">' + t.message_count + ' messages · ' + formatTime(t.updated_at) + '</div>';
+        btn.onclick = () => openThread(t);
+        threadList.appendChild(btn);
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    }
+
+    async function openThread(thread) {
+      pendingThread = thread;
+      if (thread.is_locked && !getThreadPassword(thread.id)) {
+        document.getElementById("threadUnlockTitle").textContent = thread.title;
+        document.getElementById("threadPassword").value = "";
+        document.getElementById("threadUnlockError").textContent = "";
+        threadUnlockModal.classList.add("open");
+        return;
+      }
+      await enterThread(thread);
+    }
+
+    async function enterThread(thread) {
+      currentThread = thread;
+      headerTitle.textContent = thread.title;
+      deleteChatBtn.style.display =
+        sessionRole === "creative" && thread.id !== 1 ? "inline-flex" : "none";
+      showScreen("chat");
+      await loadThreadMessages();
+      input.focus();
+    }
+
+    async function loadThreadMessages() {
+      showMessageSkeletons();
+      const res = await fetch("/threads/" + currentThread.id + "/messages", {
+        headers: authHeaders(currentThread.id)
+      });
+      if (res.status === 403) {
+        setThreadPassword(currentThread.id, "");
+        threadUnlockModal.classList.add("open");
+        return;
+      }
+      if (!res.ok) throw new Error("Could not load messages");
+      const data = await res.json();
+      messagesEl.innerHTML = "";
+      for (const row of (data.messages || []).slice().reverse()) {
+        addBubble(row.content, "you");
+        if (row.response) addBubble(row.response, "maximus");
+      }
+    }
+
+    function addBubble(text, kind) {
+      const wrap = document.createElement("div");
+      wrap.className = "bubble-wrap " + kind;
+      const div = document.createElement("div");
+      div.className = "bubble " + kind;
+      div.textContent = text;
+      wrap.appendChild(div);
+      messagesEl.appendChild(wrap);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      return div;
+    }
+
+    function parseSseChunk(buffer, onEvent) {
+      const parts = buffer.split("\\n\\n");
+      const rest = parts.pop() || "";
+      for (const part of parts) {
+        const lines = part.split("\\n");
+        let event = "message";
+        let data = "";
+        for (const line of lines) {
+          if (line.startsWith("event: ")) event = line.slice(7);
+          if (line.startsWith("data: ")) data = line.slice(6);
+        }
+        if (data) {
+          try { onEvent(event, JSON.parse(data)); } catch {}
+        }
+      }
+      return rest;
+    }
+
+    function showSolApproval(id, to, amount) {
+      if (sessionRole !== "creative" && sessionRole !== "family") return;
+      pendingSolId = id;
+      document.getElementById("solModalText").textContent =
+        "Send " + amount + " SOL to " + to + "?";
+      document.getElementById("solModalError").textContent = "";
+      solModal.classList.add("open");
+    }
+
+    function setSending(sending) {
+      isStreaming = sending;
+      sendBtn.disabled = sending;
+      sendBtn.textContent = sending ? "…" : "Send";
+      sendBtn.classList.toggle("sending", sending);
+      input.disabled = sending;
+    }
+
+    async function sendMessage() {
+      const text = input.value.trim();
+      if (!text || isStreaming || !currentThread) return;
+      input.value = "";
+      autoGrowTextarea();
+      setSending(true);
+      addBubble(text, "you");
+      showTyping();
+      const replyBubble = addBubble("", "maximus");
+      hideTyping();
+      let buffer = "";
+      try {
+        const res = await fetch("/threads/" + currentThread.id + "/chat/stream", {
+          method: "POST",
+          headers: authHeaders(currentThread.id),
+          body: JSON.stringify({ message: text })
+        });
+        if (!res.ok || !res.body) throw new Error("Stream failed");
+        showTyping();
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let gotToken = false;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          buffer = parseSseChunk(buffer, (event, data) => {
+            if (event === "status") streamStatus.textContent = data.message || "";
+            if (event === "token") {
+              if (!gotToken) { hideTyping(); gotToken = true; }
+              replyBubble.textContent += data.text || "";
+              messagesEl.scrollTop = messagesEl.scrollHeight;
+            }
+            if (event === "pending_send" && window.__canSolApprove) {
+              showSolApproval(data.id, data.to, data.amount_sol);
+            }
+            if (event === "done") {
+              hideTyping();
+              if (!replyBubble.textContent.trim()) replyBubble.textContent = data.response || "";
+              streamStatus.textContent = "";
+              loadThreads();
+            }
+          });
+        }
+        hideTyping();
+        loadStatusMeta();
+      } catch (err) {
+        hideTyping();
+        replyBubble.textContent = "Something went wrong. Try again.";
+        showToast(err.message || "Message failed", "error");
+      } finally {
+        setSending(false);
+        input.focus();
+      }
+    }
+
+    deleteChatBtn.onclick = () => {
+      if (!currentThread || currentThread.id === 1) return;
+      deleteConfirmModal.classList.add("open");
+    };
+
+    document.getElementById("confirmDeleteBtn").onclick = async () => {
+      deleteConfirmModal.classList.remove("open");
+      if (!currentThread) return;
+      try {
+        const res = await fetch("/threads/" + currentThread.id, {
+          method: "DELETE",
+          headers: authHeaders(currentThread.id)
+        });
+        if (res.ok) {
+          currentThread = null;
+          headerTitle.textContent = "Chats";
+          showScreen("threads");
+          await loadThreads();
+        } else {
+          showToast("Could not delete chat", "error");
+        }
+      } catch {
+        showToast("Could not delete chat", "error");
+      }
+    };
+
+    document.getElementById("cancelDeleteBtn").onclick = () => {
+      deleteConfirmModal.classList.remove("open");
+    };
+
+    document.getElementById("solApproveBtn").onclick = async () => {
+      if (!pendingSolId) return;
+      const err = document.getElementById("solModalError");
+      err.textContent = "";
+      const res = await fetch("/pending-sends/" + pendingSolId + "/approve", {
+        method: "POST",
+        headers: authHeaders(0)
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        err.textContent = data.error || "Approve failed";
+        return;
+      }
+      solModal.classList.remove("open");
+      addBubble("SOL sent. Signature: " + data.signature, "maximus");
+      pendingSolId = null;
+    };
+
+    document.getElementById("solRejectBtn").onclick = async () => {
+      if (!pendingSolId) return;
+      await fetch("/pending-sends/" + pendingSolId + "/reject", {
+        method: "POST",
+        headers: authHeaders(0)
+      });
+      solModal.classList.remove("open");
+      addBubble("SOL send rejected.", "maximus");
+      pendingSolId = null;
+    };
+
+    async function enterAfterUnlock() {
+      await loadStatusMeta();
+      if (sessionRole === "friend") {
+        const res = await fetch("/threads", { headers: authHeaders(0) });
+        if (!res.ok) throw new Error("Could not load chats");
+        const data = await res.json();
+        const threads = data.threads || [];
+        if (threads.length >= 1) {
+          await enterThread(threads[0]);
+          return;
+        }
+        throw new Error("Could not open chat");
+      }
+      await loadThreads();
+      showScreen("threads");
+      headerTitle.textContent = "Chats";
+    }
+
+    document.getElementById("unlockBtn").onclick = async () => {
+      const pw = document.getElementById("sitePassword").value.trim();
+      const err = document.getElementById("unlockError");
+      const btn = document.getElementById("unlockBtn");
+      err.textContent = "";
+      if (!pw) { err.textContent = "Enter your access code"; return; }
+      btn.disabled = true;
+      sessionStorage.setItem(SITE_KEY, pw);
+      try {
+        await loadSession();
+      } catch {
+        sessionStorage.removeItem(SITE_KEY);
+        sessionRole = null;
+        sessionLabel = "";
+        applyRoleUi();
+        err.textContent = "Invalid access code";
+        btn.disabled = false;
+        return;
+      }
+      try {
+        await enterAfterUnlock();
+      } catch (e) {
+        err.textContent = e.message || "Could not load. Try again.";
+      }
+      btn.disabled = false;
+    };
+
+    document.getElementById("sitePassword").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") document.getElementById("unlockBtn").click();
+    });
+
+    newChatBtn.onclick = () => {
+      document.getElementById("newTitle").value = "";
+      document.getElementById("newPrivate").checked = false;
+      document.getElementById("newPasswordWrap").style.display = "none";
+      document.getElementById("newThreadPassword").value = "";
+      document.getElementById("newChatError").textContent = "";
+      newChatModal.classList.add("open");
+    };
+
+    document.getElementById("newPrivate").onchange = (e) => {
+      document.getElementById("newPasswordWrap").style.display = e.target.checked ? "block" : "none";
+    };
+
+    document.getElementById("cancelNewBtn").onclick = () => newChatModal.classList.remove("open");
+
+    document.getElementById("createChatBtn").onclick = async () => {
+      const title = document.getElementById("newTitle").value.trim() || "New chat";
+      const isPrivate = document.getElementById("newPrivate").checked;
+      const password = isPrivate ? document.getElementById("newThreadPassword").value.trim() : "";
+      const err = document.getElementById("newChatError");
+      err.textContent = "";
+      if (isPrivate && !password) { err.textContent = "Set a chat password"; return; }
+      try {
+        const res = await fetch("/threads", {
+          method: "POST",
+          headers: authHeaders(0),
+          body: JSON.stringify({ title, password: password || undefined })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed");
+        if (password) setThreadPassword(data.thread.id, password);
+        newChatModal.classList.remove("open");
+        await loadThreads();
+        await enterThread({ id: data.thread.id, title: data.thread.title, is_locked: data.thread.is_locked });
+      } catch (e) {
+        err.textContent = e.message || "Failed";
+      }
+    };
+
+    document.getElementById("threadUnlockBtn").onclick = async () => {
+      const pw = document.getElementById("threadPassword").value.trim();
+      const err = document.getElementById("threadUnlockError");
+      err.textContent = "";
+      if (!pw || !pendingThread) { err.textContent = "Enter password"; return; }
+      setThreadPassword(pendingThread.id, pw);
+      try {
+        const res = await fetch("/threads/" + pendingThread.id + "/messages", {
+          headers: authHeaders(pendingThread.id)
+        });
+        if (!res.ok) {
+          setThreadPassword(pendingThread.id, "");
+          throw new Error("Wrong password");
+        }
+        threadUnlockModal.classList.remove("open");
+        await enterThread(pendingThread);
+      } catch (e) {
+        err.textContent = e.message || "Wrong password";
+      }
+    };
+
+    document.getElementById("cancelUnlockBtn").onclick = () => {
+      threadUnlockModal.classList.remove("open");
+      pendingThread = null;
+    };
+
+    backBtn.onclick = async () => {
+      if (sessionRole === "friend") return;
+      currentThread = null;
+      headerTitle.textContent = "Chats";
+      showScreen("threads");
+      await loadThreads();
+    };
+
+    (async () => {
+      if (!sitePassword()) return;
+      try {
+        await loadSession();
+        await enterAfterUnlock();
+      } catch {
+        sessionStorage.removeItem(SITE_KEY);
+        sessionRole = null;
+        sessionLabel = "";
+        applyRoleUi();
+      }
+    })();
+
+    form.addEventListener("submit", (e) => { e.preventDefault(); sendMessage(); });
+    input.addEventListener("input", autoGrowTextarea);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    });
+  </script>
+</body>
+</html>`;
+}

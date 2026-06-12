@@ -9,7 +9,9 @@
     "genesis": "node --env-file=../../.env --import tsx ./src/cli.ts genesis",
     "start": "node --env-file=../../.env --import tsx ./src/cli.ts start",
     "tick-once": "node --env-file=../../.env --import tsx ./src/cli.ts tick-once",
-    "status": "node --env-file=../../.env --import tsx ./src/cli.ts status"
+    "status": "node --env-file=../../.env --import tsx ./src/cli.ts status",
+    "chat": "node --env-file=../../.env --import tsx ./src/cli.ts chat",
+    "messages": "node --env-file=../../.env --import tsx ./src/cli.ts messages"
   },
   "dependencies": {
     "@maximus/agent-runtime": "*",

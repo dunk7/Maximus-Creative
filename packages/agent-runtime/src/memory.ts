@@ -39,3 +39,23 @@ export function searchMemories(db: Database.Database, query: string, limit = 10)
     )
     .all(pattern, limit) as MemoryRow[];
 }
+
+export function deleteMemory(db: Database.Database, id: number): boolean {
+  const result = db.prepare("DELETE FROM memories WHERE id = ?").run(id);
+  return result.changes > 0;
+}
+
+export function consolidateMemories(db: Database.Database, limit = 50): string {
+  const rows = listMemories(db, limit);
+  if (rows.length === 0) return "No memories to consolidate.";
+
+  const grouped = rows.reduce<Record<string, MemoryRow[]>>((acc, row) => {
+    acc[row.type] = acc[row.type] ?? [];
+    acc[row.type].push(row);
+    return acc;
+  }, {});
+
+  return Object.entries(grouped)
+    .map(([type, items]) => `${type}: ${items.length} memories`)
+    .join("; ");
+}
