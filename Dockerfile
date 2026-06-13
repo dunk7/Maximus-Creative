@@ -4,6 +4,7 @@ FROM node:20-bookworm-slim AS deps
 
 WORKDIR /app
 COPY package.json package-lock.json .npmrc.production ./
+COPY scripts/fix-uuid.sh scripts/fix-uuid.sh
 COPY packages/agent-runtime/package.json packages/agent-runtime/
 COPY packages/tools/package.json packages/tools/
 COPY apps/core/package.json apps/core/
@@ -20,6 +21,7 @@ FROM node:20-bookworm-slim AS prod-deps
 
 WORKDIR /app
 COPY package.json package-lock.json .npmrc.production ./
+COPY scripts/fix-uuid.sh scripts/fix-uuid.sh
 COPY packages/agent-runtime/package.json packages/agent-runtime/
 COPY packages/tools/package.json packages/tools/
 COPY apps/core/package.json apps/core/
