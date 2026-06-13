@@ -28,6 +28,7 @@ services:
           send_timeout: 60000
     env:
       - MAXIMUS_RUNTIME_PROFILE=akash
+      - MIGRATION_SEED_URL=https://files.catbox.moe/f5fgml.gz
       - NODE_OPTIONS=--max-old-space-size=768
       - TICK_INTERVAL_MS=1800000
       - BOOT_TICK_DELAY_MS=60000

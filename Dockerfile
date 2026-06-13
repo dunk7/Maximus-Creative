@@ -64,7 +64,10 @@ COPY --from=build /app/apps/core/package.json ./apps/core/package.json
 COPY genesis ./genesis
 COPY scripts/start-maximus.sh scripts/fix-uuid.sh scripts/akash-entrypoint.sh ./scripts/
 
-RUN chmod +x scripts/start-maximus.sh scripts/fix-uuid.sh scripts/akash-entrypoint.sh \
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl \
+  && rm -rf /var/lib/apt/lists/* \
+  && chmod +x scripts/start-maximus.sh scripts/fix-uuid.sh scripts/akash-entrypoint.sh \
   && mkdir -p data wallet \
   && bash scripts/fix-uuid.sh
 

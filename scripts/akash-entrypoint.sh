@@ -35,7 +35,20 @@ bash scripts/fix-uuid.sh
 if [ -n "${MIGRATION_SEED_URL:-}" ] && [ ! -f data/agent.db ]; then
   echo "==> Restoring brain from migration seed..."
   mkdir -p data wallet
-  curl -fsSL "$MIGRATION_SEED_URL" -o /tmp/maximus-seed.tar.gz
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$MIGRATION_SEED_URL" -o /tmp/maximus-seed.tar.gz
+  else
+    node -e "
+const https = require('https');
+const fs = require('fs');
+const url = process.argv[1];
+const out = process.argv[2];
+https.get(url, (res) => {
+  if (res.statusCode && res.statusCode >= 400) process.exit(1);
+  res.pipe(fs.createWriteStream(out)).on('finish', () => process.exit(0));
+}).on('error', () => process.exit(1));
+" "$MIGRATION_SEED_URL" /tmp/maximus-seed.tar.gz
+  fi
   tar -xzf /tmp/maximus-seed.tar.gz -C "$ROOT"
   rm -f /tmp/maximus-seed.tar.gz
   echo "    Restored data/agent.db + wallet/"
