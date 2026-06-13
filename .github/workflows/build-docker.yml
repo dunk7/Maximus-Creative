@@ -41,3 +41,13 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/maximus-creative:latest
             ghcr.io/${{ github.repository_owner }}/maximus-creative:${{ github.sha }}
+
+      - name: Make GHCR package public
+        run: |
+          gh api --method PATCH "/user/packages/container/maximus-creative" \
+            -f visibility=public \
+            || gh api --method PATCH "/orgs/${{ github.repository_owner }}/packages/container/maximus-creative" \
+            -f visibility=public \
+            || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

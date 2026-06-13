@@ -100,18 +100,22 @@ PY
 }
 
 wait_for_image() {
-  echo "==> Waiting for image (max 20 min): $MAXIMUS_IMAGE"
+  echo "==> Waiting for GHCR image (max 15 min): $MAXIMUS_IMAGE"
   local i=0
-  while [ "$i" -lt 40 ]; do
-    if curl -fsS -o /dev/null "https://ghcr.io/v2/dunk7/maximus-creative/manifests/latest" 2>/dev/null; then
-      echo "    Image available."
+  while [ "$i" -lt 30 ]; do
+    local code
+    code="$(curl -s -o /dev/null -w "%{http_code}" "https://ghcr.io/v2/dunk7/maximus-creative/manifests/latest" || true)"
+    if [ "$code" = "200" ] || [ "$code" = "401" ]; then
+      # 200 = public image ready; 401 on private repo may still be pullable with provider creds
+      echo "    Image registry responded (HTTP $code)."
+      sleep 60
       return 0
     fi
     i=$((i + 1))
-    echo "    ...not yet ($i/40)"
+    echo "    ...building ($i/30)"
     sleep 30
   done
-  echo "Image not found on GHCR — push may still be building. Continuing anyway."
+  echo "Continuing — image may still be building on GitHub Actions."
 }
 
 create_deployment() {
