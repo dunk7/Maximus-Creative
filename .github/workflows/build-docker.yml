@@ -10,6 +10,7 @@ on:
     branches: [master, main]
     paths:
       - "Dockerfile"
+      - ".github/workflows/build-docker.yml"
       - "deploy/**"
       - "apps/**"
       - "packages/**"
@@ -38,16 +39,28 @@ jobs:
         with:
           context: .
           push: true
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
           tags: |
             ghcr.io/${{ github.repository_owner }}/maximus-creative:latest
             ghcr.io/${{ github.repository_owner }}/maximus-creative:${{ github.sha }}
 
       - name: Make GHCR package public
-        run: |
-          gh api --method PATCH "/user/packages/container/maximus-creative" \
-            -f visibility=public \
-            || gh api --method PATCH "/orgs/${{ github.repository_owner }}/packages/container/maximus-creative" \
-            -f visibility=public \
-            || true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          PKG="maximus-creative"
+          USER="${{ github.repository_owner }}"
+          echo "Checking package visibility..."
+          VIS="$(gh api "/users/${USER}/packages/container/${PKG}" --jq .visibility 2>/dev/null || echo missing)"
+          echo "Current visibility: ${VIS}"
+          if [ "${VIS}" != "public" ]; then
+            echo "Setting package to public..."
+            gh api --method PATCH "/user/packages/container/${PKG}" -f visibility=public
+            echo "Package is now public."
+          else
+            echo "Package already public."
+          fi
+          gh api "/users/${USER}/packages/container/${PKG}" --jq '{visibility,name,repository}'

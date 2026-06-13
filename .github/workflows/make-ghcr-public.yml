@@ -1,0 +1,26 @@
+# One-shot: make GHCR package public (also runs in build-docker.yml after push).
+name: Make GHCR public
+
+on:
+  workflow_dispatch:
+
+permissions:
+  packages: write
+
+jobs:
+  public:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set maximus-creative package visibility to public
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          PKG="maximus-creative"
+          USER="${{ github.repository_owner }}"
+          VIS="$(gh api "/users/${USER}/packages/container/${PKG}" --jq .visibility 2>/dev/null || echo missing)"
+          echo "Current visibility: ${VIS}"
+          if [ "${VIS}" != "public" ]; then
+            gh api --method PATCH "/user/packages/container/${PKG}" -f visibility=public
+          fi
+          gh api "/users/${USER}/packages/container/${PKG}" --jq '{visibility,name,repository}'
