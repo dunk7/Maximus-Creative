@@ -32,7 +32,7 @@ const STATUS_PATH = path.join(ROOT, "data", "migration", "skip-swap.json");
 const SOL_MINT = "So11111111111111111111111111111111111111112";
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const USDC_DECIMALS = 6;
-const RESERVE_SOL = 0.05;
+const RESERVE_SOL = 0.03;
 
 const COSMOS_PREFIXES = {
   "akashnet-2": "akash",

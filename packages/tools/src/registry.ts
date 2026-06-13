@@ -8,17 +8,18 @@ import {
   clampTickIntervalMs,
   consolidateMemories,
   isToolAllowed,
+  isProtectedEditPath,
   SHELL_TIMEOUT_MS,
   deleteMemory,
   exportSnapshot,
   getCustomToolDefinitions,
-  isProtectedEditPath,
   listGoals,
   listMemories,
   listSnapshots,
   pinSnapshotToIpfs,
   queueSolSend,
   readCreatorIntent,
+  readRuntimeEnvironment,
   registerCustomTool,
   searchMemories,
   setMeta,
@@ -57,6 +58,7 @@ const TICK_SELF_EDIT_TOOLS = new Set([
   "edit_config",
   "edit_prompt",
   "create_tool",
+  "rebuild_core",
   "self_restart",
   "self_deploy",
 ]);
@@ -65,6 +67,12 @@ const STATIC_TOOLS: ToolDefinition[] = [
   {
     name: "read_creator_intent",
     description: "Read the creator's original intent message sealed at genesis.",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "read_runtime_environment",
+    description:
+      "Read genesis/runtime_environment.md plus a live RAM/CPU snapshot — host shape, paths, memory caps, and what to avoid on this VM.",
     parameters: { type: "object", properties: {}, additionalProperties: false },
   },
   {
@@ -165,7 +173,7 @@ const STATIC_TOOLS: ToolDefinition[] = [
   {
     name: "run_shell",
     description:
-      "Run a shell command in the project root. Sudo, installs, and heavy builds require secondary goal-review approval — provide a reason tying the command to long-term goals.",
+      "Run a shell command in the project root. Creative: full shell except irreversibly dangerous commands (use self_restart instead of killing the process). Sudo requires goal-review approval.",
     parameters: {
       type: "object",
       properties: {
@@ -181,7 +189,7 @@ const STATIC_TOOLS: ToolDefinition[] = [
   {
     name: "run_task",
     description:
-      "Autonomously work on a multi-step task until complete, blocked, or timeout. Loops LLM + tools internally — use for self-improvement, research pipelines, or any goal needing sustained effort without the user saying 'keep going'.",
+      "PRIMARY tool for any task or multi-step work. Call this when the user asks you to do, build, fix, achieve, implement, or complete something — it loops LLM + tools internally until done, blocked, or timeout. Use instead of chaining manual tool calls. Do not stop after one or two tools when a task was requested.",
     parameters: {
       type: "object",
       properties: {
@@ -316,6 +324,12 @@ const STATIC_TOOLS: ToolDefinition[] = [
     },
   },
   {
+    name: "rebuild_core",
+    description:
+      "Compile TypeScript to dist/ after editing source (.ts in apps/core, packages/*). Run after edit_file, then self_restart to apply. Heavy on low-RAM VMs — call read_runtime_environment() first; export_snapshot before big changes.",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
     name: "self_restart",
     description: "Request process restart after this tick to apply self-modifications.",
     parameters: { type: "object", properties: {}, additionalProperties: false },
@@ -407,9 +421,9 @@ function listFilesRecursive(dir: string, base: string, depth = 0): string[] {
 }
 
 export interface ToolExecutorOptions {
-  /** Autonomous tick — blocks self-mod unless creator messaged. */
+  /** Autonomous tick — set allowSelfMod false to block self-edit tools during ticks. */
   tickMode?: boolean;
-  /** Allow edit_file / self_restart during tick (creator has pending messages). */
+  /** Allow edit_file / rebuild_core / self_restart during tick (default true for creative growth). */
   allowSelfMod?: boolean;
 }
 
@@ -436,6 +450,7 @@ export function createToolExecutor(
       };
     }
 
+    try {
     const custom = findCustomTool(db, name);
     if (custom) {
       if (role !== "creative") {
@@ -455,7 +470,8 @@ export function createToolExecutor(
           db,
           command,
           config.repoRoot,
-          reason
+          reason,
+          role
         );
         return { result };
       }
@@ -466,6 +482,9 @@ export function createToolExecutor(
     switch (name) {
       case "read_creator_intent":
         return { result: readCreatorIntent(db) };
+
+      case "read_runtime_environment":
+        return { result: readRuntimeEnvironment(config) };
 
       case "write_memory": {
         const row = writeMemory(
@@ -526,9 +545,9 @@ export function createToolExecutor(
 
       case "edit_file": {
         const rel = String(args.path);
-        if (isProtectedEditPath(rel)) {
+        if (isProtectedEditPath(rel, role)) {
           return {
-            result: `Blocked edit to protected file ${rel}. Edit non-critical files or ask creator to deploy.`,
+            result: `Blocked edit to protected file ${rel}.`,
           };
         }
         const filePath = resolveProjectPath(config, rel);
@@ -541,8 +560,11 @@ export function createToolExecutor(
       case "list_files": {
         const rel = args.path ? String(args.path) : ".";
         const dir = resolveProjectPath(config, rel);
+        if (!fs.existsSync(dir)) {
+          return { result: `Path not found: ${rel}` };
+        }
         const files = listFilesRecursive(dir, config.repoRoot);
-        return { result: files.slice(0, 200).join("\n") };
+        return { result: files.slice(0, 200).join("\n") || "(empty directory)" };
       }
 
       case "run_shell": {
@@ -553,7 +575,20 @@ export function createToolExecutor(
           db,
           command,
           config.repoRoot,
-          reason
+          reason,
+          role
+        );
+        return { result: output };
+      }
+
+      case "rebuild_core": {
+        const output = await executeShellWithGuardrails(
+          config,
+          db,
+          "bash scripts/build-core.sh",
+          config.repoRoot,
+          undefined,
+          role
         );
         return { result: output };
       }
@@ -721,6 +756,10 @@ export function createToolExecutor(
 
       default:
         return { result: `Unknown tool: ${name}` };
+    }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { result: `Tool error (${name}): ${message}` };
     }
   };
 }

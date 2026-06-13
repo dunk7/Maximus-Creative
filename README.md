@@ -88,21 +88,41 @@ curl -X POST http://167.234.214.140:4747/chat \
   -d '{"message":"Hello Maximus"}'
 ```
 
-## Backup wake
+## Manual wake
 
-GitHub Actions workflow at `.github/workflows/wake.yml` pings `/wake` every 15 minutes when you set repo secrets:
+If you need to nudge Maximus outside the normal tick schedule:
 
-- `MAXIMUS_WAKE_URL` — e.g. `http://your-host:4747`
-- `MAXIMUS_WAKE_SECRET` — same as `WAKE_SECRET` in `.env`
+```bash
+curl -X POST http://your-host:4747/wake \
+  -H "Authorization: Bearer $WAKE_SECRET"
+```
+
+Creative access only. The agent also wakes on its configured tick interval (default 30 minutes).
 
 ## Tools available to Maximus
 
 - Memory: `write_memory`, `read_memories`, `delete_memory`, `consolidate_memories`
 - Goals: `list_goals`, `add_goal`, `update_goal`
-- Self-edit: `read_file`, `edit_file`, `list_files`, `edit_prompt`, `edit_config`, `create_tool`, `self_restart`
+- Self-edit: `read_file`, `edit_file`, `list_files`, `rebuild_core`, `edit_prompt`, `edit_config`, `create_tool`, `self_restart`
 - Shell/git/web: `run_shell`, `git_status`, `git_commit`, `web_fetch`
 - Solana: `solana_balance`, `solana_send`, `solana_stake`, `solana_stake_accounts`
 - Survival: `export_snapshot`, `list_snapshots`, `self_deploy`, `read_creator_intent`
+
+## Deploy to Akash Network (~$100/year, 2 Gi RAM)
+
+Oracle micro (~498 MB) OOM-freezes too often. **Akash** gives ~2 Gi RAM for ~$8–10/month.
+
+```bash
+export MAXIMUS_IMAGE=ghcr.io/YOUR_USER/maximus-creative:latest
+./scripts/build-docker.sh
+docker push "$MAXIMUS_IMAGE"
+# Fund Keplr with AKT → mint ACT in console.akash.network
+./scripts/deploy-akash.sh   # or paste deploy/akash/maximus.yml in Console
+```
+
+**Payment:** Akash uses **ACT/AKT on Cosmos**, not SOL. See `genesis/akash_deployment.md`.
+
+Migrate brain from Oracle: `./scripts/migrate-to-akash.sh 167.234.214.140`
 
 ## Optional IPFS pinning
 

@@ -4,6 +4,7 @@ export const MIN_TICK_INTERVAL_MS = 60_000;
 /** Sane default for 1GB Oracle micro VM. */
 export const DEFAULT_TICK_INTERVAL_MS = 1_800_000;
 
+/** Legacy list — protected for non-creative roles (family/friend lack edit_file anyway). */
 export const PROTECTED_EDIT_PATHS = [
   "package.json",
   "package-lock.json",
@@ -19,51 +20,40 @@ export const PROTECTED_EDIT_PATHS = [
   "apps/core/src/repair.ts",
 ];
 
-export function clampTickIntervalMs(ms: number): number {
-  if (!Number.isFinite(ms) || ms < MIN_TICK_INTERVAL_MS) return DEFAULT_TICK_INTERVAL_MS;
-  return Math.floor(ms);
+export function normalizeEditPath(relPath: string): string {
+  return relPath.replace(/\\/g, "/").replace(/^\.\//, "");
 }
 
-export function isProtectedEditPath(relPath: string): boolean {
-  const normalized = relPath.replace(/\\/g, "/").replace(/^\.\//, "");
+export function isProtectedEditPath(relPath: string, role: import("./access.js").UserRole = "family"): boolean {
+  if (role === "creative") return false;
+  const normalized = normalizeEditPath(relPath);
   return PROTECTED_EDIT_PATHS.some(
     (p) => normalized === p || normalized.endsWith(`/${p}`)
   );
 }
 
-/** Irreversibly dangerous — never run, even with goal-review approval. */
-export function isHardBlockedShell(command: string): boolean {
+/** Creative privileged commands — run without goal-review approval. */
+export function isCreativePrivilegedShellCommand(command: string): boolean {
+  if (isCreativeSelfBuildCommand(command)) return true;
   const c = command.toLowerCase().trim();
-  if (!c) return true;
-  const hard = [
-    /\brm\s+-rf\s+\//,
-    /\bdd\s+if=/,
-    /\bmkfs\b/,
-    /\bshutdown\b/,
-    /\breboot\b/,
-    /\bhalt\b/,
-    /\bsystemctl\s+(stop|restart|disable)\s+maximus\b/,
-    /\bkillall\s+node\b/,
-    /\bpkill\s+-9\s+node\b/,
-    /\bkill\s+-9\b/,
-    /\bcurl\s+.*\|\s*(ba)?sh\b/,
-    /\bwget\s+.*\|\s*(ba)?sh\b/,
-  ];
-  return hard.some((re) => re.test(c));
+  return /\bnpm\s+(install|ci)\b/.test(c);
 }
 
-/** Privileged or heavy commands — allowed only after secondary goal-review LLM approval. */
-export function requiresShellApproval(command: string): boolean {
-  if (isHardBlockedShell(command)) return false;
+/** Creative self-build commands (still blocked for family/friend and autonomous shell guard). */
+export function isCreativeSelfBuildCommand(command: string): boolean {
   const c = command.toLowerCase().trim();
-  if (/\bsudo\b/.test(c)) return true;
-  return isBlockedShellCommand(command);
+  return (
+    /\bscripts\/build-core\.sh\b/.test(c) ||
+    /\bbash\s+scripts\/build-core\.sh\b/.test(c) ||
+    /\bnpm run build:core\b/.test(c) ||
+    /\bnpm run build --workspace=@maximus\/(core|tools|agent-runtime)\b/.test(c)
+  );
 }
 
-/** Shell commands that freeze the 1GB VM / block the HTTP server. */
-export function isBlockedShellCommand(command: string): boolean {
+export function isBlockedShellCommand(command: string, role?: import("./access.js").UserRole): boolean {
   const c = command.toLowerCase().trim();
   if (!c) return true;
+  if (role === "creative") return false;
   const blocked = [
     /\bnpm\s+(run\s+)?build\b/,
     /\bnpm\s+run\b/,
@@ -98,14 +88,55 @@ export function isBlockedShellCommand(command: string): boolean {
   return blocked.some((re) => re.test(c));
 }
 
+/** Irreversibly dangerous — never run, even with goal-review approval. */
+export function isHardBlockedShell(command: string): boolean {
+  const c = command.toLowerCase().trim();
+  if (!c) return true;
+  const hard = [
+    /\brm\s+-rf\s+\//,
+    /\bdd\s+if=/,
+    /\bmkfs\b/,
+    /\bshutdown\b/,
+    /\breboot\b/,
+    /\bhalt\b/,
+    /\bsystemctl\s+(stop|restart|disable)\s+maximus\b/,
+    /\bkillall\s+node\b/,
+    /\bpkill\s+-9\s+node\b/,
+    /\bkill\s+-9\b/,
+    /\bcurl\s+.*\|\s*(ba)?sh\b/,
+    /\bwget\s+.*\|\s*(ba)?sh\b/,
+  ];
+  return hard.some((re) => re.test(c));
+}
+
+/** Privileged or heavy commands — allowed only after secondary goal-review LLM approval. */
+export function requiresShellApproval(
+  command: string,
+  role?: import("./access.js").UserRole
+): boolean {
+  if (isHardBlockedShell(command)) return false;
+  const c = command.toLowerCase().trim();
+  if (/\bsudo\b/.test(c)) return true;
+  return isBlockedShellCommand(command, role);
+}
+
+export function clampTickIntervalMs(ms: number): number {
+  if (!Number.isFinite(ms) || ms < MIN_TICK_INTERVAL_MS) return DEFAULT_TICK_INTERVAL_MS;
+  return Math.floor(ms);
+}
+
 /** Max wall time for run_shell — keeps chat/health responsive. */
 export const SHELL_TIMEOUT_MS = 45_000;
 
 /** Longer timeout for approved installs / package managers. */
 export const SHELL_INSTALL_TIMEOUT_MS = 300_000;
 
-export function shellTimeoutForCommand(command: string): number {
+export function shellTimeoutForCommand(command: string, role?: import("./access.js").UserRole): number {
   const c = command.toLowerCase();
+  if (role === "creative") {
+    if (isCreativePrivilegedShellCommand(command)) return SHELL_INSTALL_TIMEOUT_MS;
+    if (/\b(npm|tsc|make|cargo|next|vite|webpack)\b/.test(c)) return 180_000;
+  }
   if (
     /\b(apt|apt-get|dnf|yum|brew|pip3?|npm|snap)\s+install\b/.test(c) ||
     /\bnpm\s+ci\b/.test(c) ||
@@ -113,6 +144,6 @@ export function shellTimeoutForCommand(command: string): number {
   ) {
     return SHELL_INSTALL_TIMEOUT_MS;
   }
-  if (requiresShellApproval(command)) return SHELL_INSTALL_TIMEOUT_MS;
+  if (requiresShellApproval(command, role)) return SHELL_INSTALL_TIMEOUT_MS;
   return SHELL_TIMEOUT_MS;
 }

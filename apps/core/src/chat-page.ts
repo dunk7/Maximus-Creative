@@ -302,21 +302,24 @@ export function renderChatPage(): string {
       text-decoration: underline;
       word-break: break-word;
     }
-    .typing {
+    .bubble.maximus.typing {
       display: inline-flex;
-      gap: 4px;
-      padding: 0.85rem 1rem;
-      align-self: flex-start;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      min-width: 3.5rem;
+      min-height: 2.35rem;
     }
-    .typing span {
+    .bubble.maximus.typing span {
       width: 7px;
       height: 7px;
       border-radius: 50%;
       background: var(--text-muted);
       animation: bounce 1.2s infinite ease-in-out;
+      flex-shrink: 0;
     }
-    .typing span:nth-child(2) { animation-delay: 0.15s; }
-    .typing span:nth-child(3) { animation-delay: 0.3s; }
+    .bubble.maximus.typing span:nth-child(2) { animation-delay: 0.15s; }
+    .bubble.maximus.typing span:nth-child(3) { animation-delay: 0.3s; }
     @keyframes bounce {
       0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
       30% { transform: translateY(-5px); opacity: 1; }
@@ -698,10 +701,15 @@ export function renderChatPage(): string {
 
     function showTyping() {
       hideTyping();
-      typingEl = document.createElement("div");
-      typingEl.className = "typing";
-      typingEl.innerHTML = "<span></span><span></span><span></span>";
-      messagesEl.appendChild(typingEl);
+      const wrap = document.createElement("div");
+      wrap.className = "bubble-wrap maximus";
+      const bubble = document.createElement("div");
+      bubble.className = "bubble maximus typing";
+      bubble.setAttribute("aria-label", "Maximus is thinking");
+      bubble.innerHTML = "<span></span><span></span><span></span>";
+      wrap.appendChild(bubble);
+      typingEl = wrap;
+      messagesEl.appendChild(wrap);
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
@@ -956,20 +964,20 @@ export function renderChatPage(): string {
       setSending(true);
       addBubble(text, "you");
       showTyping();
-      const replyBubble = addBubble("", "maximus");
-      hideTyping();
+      let replyBubble = null;
       let buffer = "";
+      const streamAbort = new AbortController();
+      const streamTimer = setTimeout(() => streamAbort.abort(), 120000);
       try {
         const res = await fetch("/threads/" + currentThread.id + "/chat/stream", {
           method: "POST",
           headers: authHeaders(currentThread.id),
-          body: JSON.stringify({ message: text })
+          body: JSON.stringify({ message: text }),
+          signal: streamAbort.signal
         });
         if (!res.ok || !res.body) throw new Error("Stream failed");
-        showTyping();
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
-        let gotToken = false;
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -984,7 +992,10 @@ export function renderChatPage(): string {
               }
             }
             if (event === "token") {
-              if (!gotToken) { hideTyping(); gotToken = true; }
+              if (!replyBubble) {
+                hideTyping();
+                replyBubble = addBubble("", "maximus");
+              }
               appendBubbleToken(replyBubble, data.text || "");
               messagesEl.scrollTop = messagesEl.scrollHeight;
             }
@@ -993,7 +1004,8 @@ export function renderChatPage(): string {
             }
             if (event === "done") {
               hideTyping();
-              setBubbleContent(replyBubble, data.response || div.dataset.raw || "", "maximus");
+              if (!replyBubble) replyBubble = addBubble("", "maximus");
+              setBubbleContent(replyBubble, data.response || replyBubble.dataset.raw || "", "maximus");
               streamStatus.textContent = "";
               const label =
                 data.model_label ||
@@ -1010,9 +1022,14 @@ export function renderChatPage(): string {
         loadStatusMeta();
       } catch (err) {
         hideTyping();
-        setBubbleContent(replyBubble, "Something went wrong. Try again.", "maximus");
-        showToast(err.message || "Message failed", "error");
+        if (!replyBubble) replyBubble = addBubble("", "maximus");
+        const msg = err.name === "AbortError"
+          ? "Request timed out — Maximus may be busy. Try again."
+          : "Something went wrong. Try again.";
+        setBubbleContent(replyBubble, msg, "maximus");
+        showToast(err.name === "AbortError" ? "Timed out waiting for reply" : (err.message || "Message failed"), "error");
       } finally {
+        clearTimeout(streamTimer);
         setSending(false);
         input.focus();
       }

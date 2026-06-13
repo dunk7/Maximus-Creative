@@ -36,25 +36,31 @@ sudo chown opc:opc /opt/maximus
 node -v
 REMOTE_BOOT
 
+echo "==> Building on laptop (not on the VM)..."
+bash "$ROOT/scripts/build-core.sh"
+
 echo "==> Syncing Maximus to /opt/maximus..."
 rsync -avz --delete \
   -e "ssh ${SSH_OPTS[*]}" \
   --exclude node_modules \
-  --exclude dist \
   --exclude .git \
   --exclude data \
   --exclude 'apps/web/.next' \
+  --exclude 'apps/web/node_modules' \
   "${ROOT}/" "${USER}@${IP}:/opt/maximus/"
 
 echo "==> Copying .env and wallet (secrets)..."
 scp "${SSH_OPTS[@]}" "${ROOT}/.env" "${USER}@${IP}:/opt/maximus/.env"
 scp -r "${SSH_OPTS[@]}" "${ROOT}/wallet" "${USER}@${IP}:/opt/maximus/"
 
-echo "==> Install, build packages, install systemd service..."
+echo "==> Install runtime deps only (no compile on VM)..."
 ssh "${SSH_OPTS[@]}" "${USER}@${IP}" 'bash -s' << 'REMOTE_INSTALL'
 set -euo pipefail
 cd /opt/maximus
-export NODE_OPTIONS="--max-old-space-size=384"
+export NODE_OPTIONS="--max-old-space-size=128"
+export npm_config_audit=false
+export npm_config_fund=false
+export npm_config_progress=false
 
 if ! grep -q '^WAKE_SECRET=' .env 2>/dev/null; then
   echo 'WAKE_SECRET=create' >> .env
@@ -65,18 +71,34 @@ fi
 if ! grep -q '^FRIEND_PASSWORD=' .env 2>/dev/null; then
   echo 'FRIEND_PASSWORD=friend' >> .env
 fi
-# Always clamp tick interval on 1GB VM — prevents API/CPU meltdown
 if grep -q '^TICK_INTERVAL_MS=' .env 2>/dev/null; then
   sed -i 's/^TICK_INTERVAL_MS=.*/TICK_INTERVAL_MS=1800000/' .env
 else
   echo 'TICK_INTERVAL_MS=1800000' >> .env
 fi
+if ! grep -q '^BOOT_TICK_DELAY_MS=' .env 2>/dev/null; then
+  echo 'BOOT_TICK_DELAY_MS=60000' >> .env
+fi
+if ! grep -q '^MAXIMUS_RUNTIME_PROFILE=' .env 2>/dev/null; then
+  echo 'MAXIMUS_RUNTIME_PROFILE=oracle-e2-micro' >> .env
+fi
 
-# Free RAM: stop Maximus and kill stray npm before install/build
+for f in \
+  apps/core/dist/cli.js \
+  packages/agent-runtime/dist/index.js \
+  packages/tools/dist/index.js; do
+  if [ ! -f "$f" ]; then
+    echo "Missing $f — run npm run build:core on your laptop before deploy" >&2
+    exit 1
+  fi
+done
+
 sudo systemctl stop maximus 2>/dev/null || true
 pkill -f 'npm install' 2>/dev/null || true
 pkill -f 'npm ci' 2>/dev/null || true
 sleep 2
+
+cp -f .npmrc.production .npmrc
 
 LOCK_HASH="$(md5sum package-lock.json | awk '{print $1}')"
 NEED_INSTALL=0
@@ -85,9 +107,12 @@ if [ ! -f .npm-install-hash ] || [ "$(cat .npm-install-hash)" != "$LOCK_HASH" ] 
 fi
 
 if [ "$NEED_INSTALL" = "1" ]; then
-  echo "Running npm install (Maximus stopped to free RAM)..."
+  echo "Running production npm install (core workspaces only, no devDeps)..."
   rm -rf node_modules/rpc-websockets/node_modules/uuid 2>/dev/null || true
-  npm install --prefer-offline --no-audit --no-fund
+  npm install --omit=dev --prefer-offline --no-audit --no-fund \
+    --workspace=@maximus/agent-runtime \
+    --workspace=@maximus/tools \
+    --workspace=@maximus/core
   bash scripts/fix-uuid.sh
   echo "$LOCK_HASH" > .npm-install-hash
 else
@@ -95,17 +120,15 @@ else
 fi
 
 bash scripts/fix-uuid.sh
-chmod +x scripts/start-maximus.sh scripts/fix-uuid.sh scripts/stabilize-vm.sh 2>/dev/null || true
+chmod +x scripts/start-maximus.sh scripts/fix-uuid.sh scripts/stabilize-vm.sh scripts/harden-vm.sh scripts/build-core.sh 2>/dev/null || true
 
-npm run build --workspace=@maximus/agent-runtime
-npm run build --workspace=@maximus/tools
-npm run build --workspace=@maximus/core
+# Drop dev tooling if it slipped in — saves RAM on tiny VM
+rm -rf node_modules/typescript node_modules/tsx node_modules/next node_modules/@next 2>/dev/null || true
 
 if [ ! -f data/agent.db ]; then
-  npm run genesis
+  node --env-file=.env apps/core/dist/cli.js genesis
 fi
 
-# Smoke-test startup imports before enabling service
 node --env-file=.env -e "require('rpc-websockets'); console.log('imports ok')"
 
 sudo tee /etc/systemd/system/maximus.service > /dev/null << 'UNIT'
@@ -121,7 +144,7 @@ Type=simple
 User=opc
 WorkingDirectory=/opt/maximus
 EnvironmentFile=/opt/maximus/.env
-Environment=NODE_OPTIONS=--max-old-space-size=384
+Environment=NODE_OPTIONS=--max-old-space-size=128
 ExecStart=/opt/maximus/scripts/start-maximus.sh
 Restart=on-failure
 RestartSec=10
@@ -129,10 +152,12 @@ TimeoutStartSec=120
 TimeoutStopSec=30
 Nice=15
 IOSchedulingClass=idle
-CPUQuota=50%
-MemoryMax=768M
-MemoryHigh=640M
-OOMScoreAdjust=500
+CPUQuota=35%
+MemoryHigh=240M
+MemoryMax=280M
+MemorySwapMax=400M
+OOMScoreAdjust=900
+OOMPreference=omit
 
 [Install]
 WantedBy=multi-user.target
@@ -156,25 +181,8 @@ done
 sudo systemctl is-active maximus
 curl -s --max-time 10 http://127.0.0.1:4747/health || echo "health check pending..."
 
-sudo tee /usr/local/bin/maximus-watchdog.sh > /dev/null << 'WATCHDOG'
-#!/bin/bash
-set -euo pipefail
-
-MEM_PCT=$(free | awk '/Mem:/ {printf "%.0f", $3/$2 * 100}')
-if [ "$MEM_PCT" -gt 95 ]; then
-  logger -t maximus-watchdog "memory at ${MEM_PCT}% — restarting maximus"
-  sudo systemctl restart maximus
-  exit 0
-fi
-
-if ! curl -sf --max-time 10 http://127.0.0.1:4747/health > /dev/null; then
-  logger -t maximus-watchdog "health failed — restarting maximus"
-  sudo systemctl restart maximus
-fi
-WATCHDOG
-sudo chmod +x /usr/local/bin/maximus-watchdog.sh
-(sudo crontab -l 2>/dev/null || true; echo "*/2 * * * * /usr/local/bin/maximus-watchdog.sh") | grep -v maximus-watchdog | sudo crontab - || true
-echo "Watchdog cron installed"
+sudo bash scripts/harden-vm.sh
+echo "VM hardening applied"
 REMOTE_INSTALL
 
 echo ""
@@ -187,7 +195,3 @@ echo "    Logs:    ssh ${USER}@${IP} 'sudo journalctl -u maximus -f'"
 echo ""
 echo "If talk fails auth, fetch the server secret:"
 echo "    ssh ${USER}@${IP} 'grep WAKE_SECRET /opt/maximus/.env'"
-echo ""
-echo "Set GitHub secrets:"
-echo "    MAXIMUS_WAKE_URL=http://${IP}:4747"
-echo "    MAXIMUS_WAKE_SECRET=<value from server .env WAKE_SECRET>"

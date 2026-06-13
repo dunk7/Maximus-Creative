@@ -12,6 +12,7 @@ import {
 } from "./messages.js";
 import { autoTitleChatThread } from "./threads.js";
 import { buildRolePromptSection, type UserRole } from "./access.js";
+import { buildRuntimeEnvironmentBrief } from "./runtime-environment.js";
 import type { RuntimeConfig, ToolDefinition } from "./types.js";
 import type { ToolExecutor } from "./tick.js";
 
@@ -22,6 +23,7 @@ export interface ChatResult {
   model_label?: string;
   model?: string;
   provider?: string;
+  restartRequested?: boolean;
 }
 
 export type ChatStreamEvent =
@@ -41,6 +43,7 @@ export type ChatStreamEvent =
 interface ChatReplyWithModel {
   reply: string;
   model: LlmCallResult | null;
+  restartRequested?: boolean;
 }
 
 export interface WalletSnapshot {
@@ -56,6 +59,35 @@ const STALE_TOOL_KEEP = 2;
 
 const PAST_CONTEXT_RE =
   /remember when|what did (we|i|you)|last time|previously|earlier|recall|about our|you said|we discussed|you told/i;
+
+/** User wants work done — not small talk. */
+const TASK_REQUEST_RE =
+  /\b(task tool|run_task|achieve|accomplish|implement|build |fix |deploy|install|solve|all the steps|go ahead|do this|make it so|update the|refactor|rebuild|create a|write a|set up|configure|multi.?step|without asking|keep going|use your task|get it done|take care of)\b/i;
+
+const GREETING_ONLY_RE =
+  /^(hi|hey|hello|yo|sup|thanks|thank you|ok|okay|cool|nice|good (morning|night)|what'?s up)\b[!.,?\s]*$/i;
+
+function looksLikeTaskRequest(userMessage: string): boolean {
+  const trimmed = userMessage.trim();
+  if (!trimmed || GREETING_ONLY_RE.test(trimmed)) return false;
+  if (TASK_REQUEST_RE.test(trimmed)) return true;
+  return trimmed.length >= 48;
+}
+
+function buildTaskPromptSection(userMessage: string, role: UserRole): string {
+  if (role !== "creative" || !looksLikeTaskRequest(userMessage)) return "";
+  return [
+    "TASK REQUEST: The user wants something done end-to-end.",
+    "Call run_task immediately with a clear task description — it loops tools internally until complete, blocked, or timeout.",
+    "Do NOT drip a few manual tool calls then stop.",
+  ].join(" ");
+}
+
+function replyFromRunTask(messages: ChatMessage[]): string | null {
+  const runTaskTools = messages.filter((m) => m.role === "tool" && m.name === "run_task");
+  if (runTaskTools.length === 0) return null;
+  return runTaskTools[runTaskTools.length - 1]!.content.trim() || null;
+}
 
 function formatWalletLine(wallet: WalletSnapshot): string {
   if (!wallet.pubkey) return "Wallet: not loaded.";
@@ -82,6 +114,7 @@ function memoriesForPrompt(db: Database.Database, userMessage: string): string {
 
 function buildConversationPrompt(
   db: Database.Database,
+  config: RuntimeConfig,
   wallet: WalletSnapshot,
   userMessage: string,
   role: UserRole = "creative"
@@ -92,8 +125,11 @@ function buildConversationPrompt(
   return [
     identity?.system_prompt ?? "You are Maximus.",
     "",
+    buildRuntimeEnvironmentBrief(config),
+    "",
     `User access: ${role}.`,
     buildRolePromptSection(role),
+    buildTaskPromptSection(userMessage, role),
     formatWalletLine(wallet),
     memories ? `Recent memories (may be stale — use read_memories for recall):\n${memories}` : "",
   ]
@@ -171,9 +207,8 @@ async function synthesizeReply(
   userMessage: string
 ): Promise<string> {
   messages.push({
-    role: "user",
-    content:
-      "Now reply to the user in plain language. Summarize any tool results. Do not call more tools.",
+    role: "system",
+    content: "Write your final reply to the user based on the tool results above. Be direct.",
   });
   const routing: CallLlmOptions = {
     routing: { purpose: "synthesis", userMessage },
@@ -201,6 +236,7 @@ async function runChatWithTools(
   let reply = "";
   let usedTools = false;
   let lastModel: LlmCallResult | null = null;
+  let restartRequested = false;
 
   for (let step = 0; step < maxSteps; step++) {
     const routing: CallLlmOptions = {
@@ -222,12 +258,13 @@ async function runChatWithTools(
 
     for (const call of response.toolCalls) {
       try {
-        const { result } = await executeTool(call.name, call.arguments);
-        onTool?.(call.name, result);
+        const toolOut = await executeTool(call.name, call.arguments);
+        if (toolOut.restartRequested) restartRequested = true;
+        onTool?.(call.name, toolOut.result);
         messages.push({
           role: "tool",
           name: call.name,
-          content: result,
+          content: toolOut.result,
           tool_call_id: `${call.name}-${step}-${call.name}`,
         });
       } catch (err) {
@@ -242,7 +279,16 @@ async function runChatWithTools(
     }
   }
 
-  if (usedTools || isPlaceholderReply(reply)) {
+  const runTaskReply = replyFromRunTask(messages);
+  if (runTaskReply) {
+    return {
+      reply: runTaskReply,
+      model: lastModel,
+      restartRequested,
+    };
+  }
+
+  if (usedTools && isPlaceholderReply(reply)) {
     const synthesized = await synthesizeReply(config, db, messages, userMessage);
     if (!isPlaceholderReply(synthesized)) reply = synthesized;
     const provider = getMeta(db, "active_llm_provider");
@@ -273,6 +319,7 @@ async function runChatWithTools(
   return {
     reply: reply || "I hit a snag forming a reply — try asking again.",
     model: lastModel,
+    restartRequested,
   };
 }
 
@@ -293,7 +340,7 @@ export async function runCreatorChat(
   const history = listCreatorMessages(db, MAX_HISTORY_TURNS, threadId).filter((row) => row.id !== pending.id);
 
   const messages: ChatMessage[] = [
-    { role: "system", content: buildConversationPrompt(db, wallet, trimmed, role) },
+    { role: "system", content: buildConversationPrompt(db, config, wallet, trimmed, role) },
     ...historyToMessages(history),
     { role: "user", content: trimmed },
   ];
@@ -302,11 +349,13 @@ export async function runCreatorChat(
 
   let reply: string;
   let model: LlmCallResult | null = null;
+  let restartRequested = false;
 
   if (tools.length > 0 && executeTool) {
     const result = await runChatWithTools(config, db, messages, tools, executeTool, trimmed);
     reply = result.reply;
     model = result.model;
+    restartRequested = result.restartRequested ?? false;
   } else {
     const response = await callLlm(config, db, budgetChatMessages(messages), [], routing);
     model = response.meta ?? null;
@@ -325,6 +374,7 @@ export async function runCreatorChat(
     model_label: model?.label,
     model: model?.model,
     provider: model?.provider,
+    restartRequested: restartRequested || undefined,
   };
 }
 
@@ -332,6 +382,7 @@ export interface ChatGenerateResult {
   reply: string;
   model: LlmCallResult | null;
   messageId: number;
+  restartRequested?: boolean;
 }
 
 function emitReplyTokens(emit: (event: ChatStreamEvent) => void, text: string): void {
@@ -380,14 +431,14 @@ export async function generateCreatorChatReply(
   const history = listCreatorMessages(db, MAX_HISTORY_TURNS, threadId).filter((row) => row.id !== pending.id);
 
   const messages: ChatMessage[] = [
-    { role: "system", content: buildConversationPrompt(db, wallet, trimmed, role) },
+    { role: "system", content: buildConversationPrompt(db, config, wallet, trimmed, role) },
     ...historyToMessages(history),
     { role: "user", content: trimmed },
   ];
 
   onEvent?.({ type: "status", message: "Thinking..." });
 
-  const { reply, model } = await runChatWithTools(config, db, messages, tools, executeTool, trimmed, 8, (name, result) => {
+  const { reply, model, restartRequested } = await runChatWithTools(config, db, messages, tools, executeTool, trimmed, 8, (name, result) => {
     onEvent?.({ type: "status", message: `Running ${name}...` });
     if (name === "solana_send") {
       const parsed = parsePendingSend(result);
@@ -405,7 +456,7 @@ export async function generateCreatorChatReply(
   answerCreatorMessage(db, pending.id, reply);
   autoTitleChatThread(db, threadId, trimmed);
 
-  return { reply, model, messageId: pending.id };
+  return { reply, model, messageId: pending.id, restartRequested };
 }
 
 export async function runCreatorChatStream(

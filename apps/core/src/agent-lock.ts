@@ -1,7 +1,7 @@
 const LOCK_STALE_MS = 10 * 60 * 1000;
 const DEFAULT_MAX_WAIT_MS = 120_000;
 /** Chat/HTTP handlers must not hang — return 503 after this wait. */
-export const CHAT_LOCK_MAX_WAIT_MS = 30_000;
+export const CHAT_LOCK_MAX_WAIT_MS = 20_000;
 
 export type AgentBusyReason = "tick" | "chat";
 

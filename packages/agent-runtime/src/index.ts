@@ -16,6 +16,7 @@ export * from "./conversation.js";
 export * from "./llm.js";
 export * from "./llm-router.js";
 export * from "./task-runner.js";
+export * from "./runtime-environment.js";
 export * from "./tick.js";
 export * from "./snapshot.js";
 export * from "./custom-tools.js";

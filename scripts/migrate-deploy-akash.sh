@@ -12,7 +12,7 @@ export AKASH_NODE="${AKASH_NODE:-https://rpc.akashnet.net:443}"
 export AKASH_KEYRING_BACKEND="${AKASH_KEYRING_BACKEND:-test}"
 export AKASH_KEY_NAME="${AKASH_KEY_NAME:-maximus}"
 export MAXIMUS_IMAGE="${MAXIMUS_IMAGE:-ghcr.io/dunk7/maximus-creative:latest}"
-export AKASH_DEPOSIT="${AKASH_DEPOSIT:-5000000uact}"
+export AKASH_DEPOSIT="${AKASH_DEPOSIT:-3000000uact}"
 
 load_env() {
   if [ -f .env ]; then

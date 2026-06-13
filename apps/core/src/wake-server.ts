@@ -42,16 +42,24 @@ function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let total = 0;
+    let settled = false;
+    const fail = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    };
     req.on("data", (chunk: Buffer) => {
+      if (settled) return;
       total += chunk.length;
       if (total > MAX_JSON_BODY_BYTES) {
-        req.destroy();
-        reject(new Error("Request body too large"));
+        fail(new Error("Request body too large"));
         return;
       }
       chunks.push(chunk);
     });
     req.on("end", () => {
+      if (settled) return;
+      settled = true;
       const raw = Buffer.concat(chunks).toString("utf8").trim();
       if (!raw) {
         resolve({});
@@ -63,7 +71,7 @@ function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
         reject(err);
       }
     });
-    req.on("error", reject);
+    req.on("error", fail);
   });
 }
 
@@ -78,6 +86,12 @@ function isAgentBusyError(err: unknown): boolean {
 
 async function withChatLock<T>(fn: () => Promise<T>): Promise<T> {
   return withAgentLock(fn, { maxWaitMs: CHAT_LOCK_MAX_WAIT_MS, reason: "chat" });
+}
+
+function scheduleSelfRestartIfNeeded(restartRequested?: boolean): void {
+  if (!restartRequested) return;
+  console.log("Self-restart requested after chat. Exiting for supervisor restart...");
+  setTimeout(() => process.exit(0), 300);
 }
 
 async function handleThreadChat(
@@ -103,7 +117,7 @@ async function handleThreadChatStream(
   message: string,
   role: UserRole,
   res: http.ServerResponse
-): Promise<void> {
+): Promise<boolean> {
   const generated = await withChatLock(async () => {
     const runtimeConfig = loadConfig();
     const db = openDatabase(runtimeConfig);
@@ -128,6 +142,7 @@ async function handleThreadChatStream(
     );
   });
   streamChatReply((event: ChatStreamEvent) => writeSse(res, event), generated);
+  return generated.restartRequested ?? false;
 }
 
 function threadSummary(thread: ChatThreadSummary | ChatThreadRow): ChatThreadSummary {
@@ -340,7 +355,9 @@ export function startWakeServer(
             Connection: "keep-alive",
           });
           try {
-            await handleThreadChatStream(config, threadId, message, access.role, res);
+            const restart = await handleThreadChatStream(config, threadId, message, access.role, res);
+            res.end();
+            scheduleSelfRestartIfNeeded(restart);
           } catch (err) {
             if (isAgentBusyError(err)) {
               writeSse(res, { type: "status", message: "busy, retry" });
@@ -351,7 +368,7 @@ export function startWakeServer(
               writeSse(res, { type: "done", response: `Error: ${msg}`, message_id: 0 });
             }
           }
-          res.end();
+          if (!res.writableEnded) res.end();
           return;
         }
 
@@ -365,6 +382,7 @@ export function startWakeServer(
           try {
             const result = await handleThreadChat(config, threadId, message, access.role);
             json(200, { ok: true, ...result });
+            scheduleSelfRestartIfNeeded(result.restartRequested);
           } catch (err) {
             if (isAgentBusyError(err)) {
               json(503, { error: "busy, retry" });
@@ -395,6 +413,7 @@ export function startWakeServer(
         try {
           const result = await handleThreadChat(config, threadId, message, access.role);
           json(200, { ok: true, ...result });
+          scheduleSelfRestartIfNeeded(result.restartRequested);
         } catch (err) {
           if (isAgentBusyError(err)) {
             json(503, { error: "busy, retry" });
@@ -423,9 +442,19 @@ export function startWakeServer(
       res.end("not found");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      json(500, { error: message });
+      const status = message.includes("too large") ? 413 : 500;
+      json(status, { error: message });
     }
   });
+
+  server.on("error", (err) => {
+    console.error("[WakeServer] listen error:", err);
+    process.exit(1);
+  });
+
+  server.timeout = 120_000;
+  server.keepAliveTimeout = 65_000;
+  server.headersTimeout = 70_000;
 
   server.listen(config.wakePort, () => {
     console.log(`Wake server listening on :${config.wakePort}`);

@@ -24,6 +24,7 @@ const FAMILY_TOOLS = new Set([
   "solana_balance",
   "solana_send",
   "read_creator_intent",
+  "read_runtime_environment",
 ]);
 
 const FRIEND_TOOLS = new Set([
@@ -32,6 +33,7 @@ const FRIEND_TOOLS = new Set([
   "read_memories",
   "list_goals",
   "read_creator_intent",
+  "read_runtime_environment",
   "solana_balance",
   "read_file",
   "list_files",
@@ -106,11 +108,13 @@ export function buildRolePromptSection(role: UserRole): string {
   switch (role) {
     case "creative":
       return [
-        "Chat mode: full tool access — same as ticks (web, Solana, files, shell, memory, goals, etc.).",
-        "Reply directly for greetings, small talk, and simple questions — no tools needed.",
-        "For simple requests use at most 1–2 tools. Batch web_search + web_fetch when researching.",
+        "Chat mode: full tool access — same as ticks (web, Solana, files, shell, memory, goals, self-mod, etc.).",
+        "Reply directly for greetings, small talk, and simple one-shot questions — no tools needed.",
+        "When the user gives you a task, job, or multi-step goal: call run_task immediately. Do not do a few manual tools and stop.",
+        "Self-mod workflow: edit_file (any path) → rebuild_core → self_restart. npm install/ci via run_shell. export_snapshot before big changes.",
+        "For quick lookups use 1–2 tools. For anything to build, fix, or achieve — run_task.",
         "For past context, use read_memories with a query — do not guess from stale prompt memories.",
-        "Use tools only when you need live data or must take an action. After tools, always explain the result to the user.",
+        "With the creator: be fully honest and transparent — explain constraints, what you did, and system/prompt context when relevant.",
       ].join("\n");
     case "family":
       return [

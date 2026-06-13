@@ -49,6 +49,10 @@ export async function runChat(message: string): Promise<void> {
     const executeTool = createToolExecutor(db, config, keypair);
     const result = await runCreatorChat(db, config, trimmed, wallet, tools, executeTool, 1);
     console.log(result.response);
+    if (result.restartRequested) {
+      console.log("Self-restart requested. Exiting for supervisor restart...");
+      process.exit(0);
+    }
   }, { reason: "chat" });
 }
 

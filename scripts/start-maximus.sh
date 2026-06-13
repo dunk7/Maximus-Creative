@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=384}"
+export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=128}"
 
 CLI="$ROOT/apps/core/dist/cli.js"
 ENV_FILE="$ROOT/.env"

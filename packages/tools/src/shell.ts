@@ -1,11 +1,13 @@
 import { spawn } from "node:child_process";
 import type Database from "better-sqlite3";
 import {
+  isCreativePrivilegedShellCommand,
   isHardBlockedShell,
   requiresShellApproval,
   shellTimeoutForCommand,
   validateShellAgainstGoals,
   type RuntimeConfig,
+  type UserRole,
 } from "@maximus/agent-runtime";
 
 function runShellAsync(command: string, cwd: string, timeoutMs: number): Promise<string> {
@@ -52,13 +54,21 @@ export async function executeShellWithGuardrails(
   db: Database.Database,
   command: string,
   cwd: string,
-  agentReason?: string
+  agentReason?: string,
+  role: UserRole = "creative"
 ): Promise<string> {
   if (isHardBlockedShell(command)) {
     return "Blocked: command is irreversibly dangerous and cannot be approved.";
   }
 
-  if (requiresShellApproval(command)) {
+  const c = command.toLowerCase().trim();
+  if (role === "creative" && !/\bsudo\b/.test(c)) {
+    const output = await runShellAsync(command, cwd, shellTimeoutForCommand(command, role));
+    const label = isCreativePrivilegedShellCommand(command) ? "Creative privileged" : "Creative shell";
+    return `[${label}]\n${output}`;
+  }
+
+  if (requiresShellApproval(command, role)) {
     const verdict = await validateShellAgainstGoals(config, db, command, agentReason);
     if (!verdict.approved) {
       const goals =
@@ -68,7 +78,7 @@ export async function executeShellWithGuardrails(
       return `Shell command rejected by goal reviewer${goals}: ${verdict.rationale}`;
     }
 
-    const timeout = shellTimeoutForCommand(command);
+    const timeout = shellTimeoutForCommand(command, role);
     const output = await runShellAsync(command, cwd, timeout);
     const goalNote =
       verdict.relatedGoalIds.length > 0
@@ -77,5 +87,5 @@ export async function executeShellWithGuardrails(
     return `[Goal-approved:${goalNote} ${verdict.rationale}]\n${output}`;
   }
 
-  return runShellAsync(command, cwd, shellTimeoutForCommand(command));
+  return runShellAsync(command, cwd, shellTimeoutForCommand(command, role));
 }

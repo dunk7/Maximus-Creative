@@ -73,7 +73,7 @@ profiles:
               persistent: true
               class: beta3
           - name: repo
-            size: 10Gi
+            size: 2Gi
             attributes:
               persistent: true
               class: beta3
@@ -84,7 +84,7 @@ profiles:
       pricing:
         maximus:
           denom: uact
-          amount: 12000
+          amount: 8000
 
 deployment:
   maximus:

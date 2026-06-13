@@ -16,6 +16,13 @@ pkill -f 'npm install' 2>/dev/null || true
 pkill -f 'npm ci' 2>/dev/null || true
 sleep 2
 
+echo "==> Dropping caches if RAM is tight..."
+AVAIL_KB=$(awk '/MemAvailable:/ {print $2}' /proc/meminfo)
+if [ -n "$AVAIL_KB" ] && [ "$AVAIL_KB" -lt 160000 ]; then
+  sync
+  echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
+fi
+
 echo "==> Restarting Maximus..."
 systemctl stop maximus 2>/dev/null || true
 sleep 2

@@ -7,6 +7,7 @@ import { listPendingCreatorMessages } from "./messages.js";
 import { getMeta, setMeta } from "./db.js";
 import type { RuntimeConfig, TickContext, TickResult } from "./types.js";
 import { getIdentity } from "./identity.js";
+import { buildRuntimeEnvironmentBrief } from "./runtime-environment.js";
 
 export type ToolExecutor = (
   name: string,
@@ -101,6 +102,8 @@ function briefToolLabel(name: string, args: Record<string, unknown>): string {
     }
     case "run_shell":
       return "run_shell";
+    case "rebuild_core":
+      return "rebuild_core";
     case "run_task":
       return `run_task(${truncate(String(args.task ?? "task"), 20)})`;
     default:
@@ -141,7 +144,7 @@ function buildTickSummary(
   return `Tick #${tickNumber}: ${unique.slice(0, 2).join(", ")} +${unique.length - 2} more`;
 }
 
-function formatContext(ctx: TickContext): string {
+function formatContext(ctx: TickContext, config: RuntimeConfig): string {
   const goals = ctx.goals
     .slice(0, 6)
     .map((g) => `- [${g.id}] ${g.title} (p=${g.priority})`)
@@ -160,6 +163,7 @@ function formatContext(ctx: TickContext): string {
     .join("\n");
 
   const parts = [
+    buildRuntimeEnvironmentBrief(config, 500),
     `Tick #${ctx.tickNumber}`,
     `Wallet: ${ctx.walletBalanceSol != null ? `${ctx.walletBalanceSol.toFixed(4)} SOL` : "unknown"} (${ctx.walletPubkey ?? "none"})`,
     `Goals:\n${goals || "(none)"}`,
@@ -197,7 +201,7 @@ export async function runTick(
   const { maxToolCalls } = options;
   const messages: import("./llm.js").ChatMessage[] = [
     { role: "system", content: ctx.identity.system_prompt },
-    { role: "user", content: formatContext(ctx) },
+    { role: "user", content: formatContext(ctx, config) },
   ];
 
   let totalToolCalls = 0;

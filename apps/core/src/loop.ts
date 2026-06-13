@@ -26,8 +26,9 @@ import { buildAgentStatus, getEffectiveTickIntervalMs, invalidateStatusCache } f
 import { runStartupRepair } from "./repair.js";
 import { startWakeServer } from "./wake-server.js";
 
-const TICK_MAX_MS = 5 * 60 * 1000;
-const LOW_MEMORY_SKIP_BYTES = 150 * 1024 * 1024;
+const TICK_MAX_MS = 3 * 60 * 1000;
+const LOW_MEMORY_SKIP_BYTES = 220 * 1024 * 1024;
+const BOOT_TICK_DELAY_MS = Number(process.env.BOOT_TICK_DELAY_MS ?? 60_000);
 
 let wakeNow = false;
 let runningTick = false;
@@ -87,8 +88,7 @@ async function runTickBody(forceRun: boolean): Promise<void> {
 
   const tickNumber = incrementTickNumber(db);
   ctx.tickNumber = tickNumber;
-  const allowSelfMod = ctx.pendingCreatorMessages.length > 0;
-  const executeTool = createToolExecutor(db, config, keypair, "creative", { tickMode: true, allowSelfMod });
+  const executeTool = createToolExecutor(db, config, keypair, "creative", { tickMode: true });
 
   console.log(`\n[Tick #${tickNumber}] starting...`);
   const result = await runTick(db, config, ctx, getToolDefinitions(db), executeTool, {
@@ -159,6 +159,11 @@ export async function startImmortalLoop(): Promise<void> {
   console.log("\n=== MAXIMUS CORE ONLINE ===\n");
   console.log(`Tick interval: ${tickIntervalMs}ms`);
   console.log(`Wallet: ${loadOrCreateWallet(config).publicKey.toBase58()}`);
+
+  if (BOOT_TICK_DELAY_MS > 0) {
+    console.log(`Deferring boot tick ${BOOT_TICK_DELAY_MS}ms so SSH/RAM can settle...`);
+    await sleep(BOOT_TICK_DELAY_MS);
+  }
 
   try {
     await executeTick();
