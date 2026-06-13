@@ -11,7 +11,7 @@ COPY apps/core/package.json apps/core/
 
 # Full install (incl. devDeps) — tsc needs @types/* during build.
 RUN cp .npmrc.production .npmrc \
-  && npm ci \
+  && npm ci --include=dev \
     --workspace=@maximus/agent-runtime \
     --workspace=@maximus/tools \
     --workspace=@maximus/core \
