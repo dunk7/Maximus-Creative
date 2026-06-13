@@ -11,6 +11,7 @@
     "web": "npm run dev --workspace=@maximus/web",
     "supervisor": "./scripts/supervisor.sh",
     "build": "npm run build --workspaces --if-present",
+    "build:core": "bash scripts/build-core.sh",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "talk": "./scripts/talk.sh",
     "messages": "./scripts/talk.sh --history"
@@ -21,5 +22,12 @@
   "overrides": {
     "uuid": "8.3.2"
   },
-  "postinstall": "bash scripts/fix-uuid.sh"
+  "postinstall": "bash scripts/fix-uuid.sh",
+  "devDependencies": {
+    "@cosmjs/proto-signing": "^0.39.0",
+    "@cosmjs/stargate": "^0.39.0",
+    "@skip-go/client": "^1.5.15",
+    "@solana/web3.js": "^1.98.4",
+    "protobufjs": "^8.6.3"
+  }
 }

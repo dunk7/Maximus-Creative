@@ -1,0 +1,43 @@
+# Build and push Maximus Docker image to GHCR for Akash deploy.
+# Trigger manually: Actions → Build Docker image → Run workflow
+# Requires: repo Settings → Actions → General → Workflow permissions → Read and write
+
+name: Build Docker image
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, main]
+    paths:
+      - "Dockerfile"
+      - "deploy/**"
+      - "apps/**"
+      - "packages/**"
+      - "scripts/akash-entrypoint.sh"
+      - "genesis/**"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/maximus-creative:latest
+            ghcr.io/${{ github.repository_owner }}/maximus-creative:${{ github.sha }}

@@ -5,3 +5,6 @@ wallet/
 .env
 *.log
 .DS_Store
+wallet/akash.json
+bin/
+.akash-migrate/

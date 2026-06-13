@@ -1,0 +1,11 @@
+node_modules
+.git
+data
+wallet
+.env
+*.log
+.DS_Store
+apps/web/.next
+apps/web/node_modules
+**/*.tsbuildinfo
+dist

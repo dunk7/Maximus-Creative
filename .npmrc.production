@@ -1,0 +1,6 @@
+omit=dev
+audit=false
+fund=false
+progress=false
+prefer-offline=true
+engine-strict=false
