@@ -70,31 +70,33 @@ package_seed() {
 write_sdl() {
   local out="$ROOT/deploy/akash/maximus.deploy.yml"
   load_env
-  sed "s|ghcr.io/dunk7/maximus-creative:latest|${MAXIMUS_IMAGE}|g" "$ROOT/deploy/akash/maximus.yml" > "$out"
-  # Inject secrets from .env into generated SDL
   python3 - "$out" <<'PY'
 import os, sys
-path = sys.argv[1]
-text = open(path).read()
-repl = {
-  "REPLACE_ME": os.environ.get("LLM_API_KEY", ""),
-  "GROK_API_KEY=": f"GROK_API_KEY={os.environ.get('GROK_API_KEY', '')}",
-  "WAKE_SECRET=create": f"WAKE_SECRET={os.environ.get('WAKE_SECRET', 'create')}",
-  "FAMILY_PASSWORD=family": f"FAMILY_PASSWORD={os.environ.get('FAMILY_PASSWORD', 'family')}",
-  "FRIEND_PASSWORD=friend": f"FRIEND_PASSWORD={os.environ.get('FRIEND_PASSWORD', 'friend')}",
-}
-for k, v in repl.items():
-    if k == "REPLACE_ME":
-        text = text.replace("LLM_API_KEY=REPLACE_ME", f"LLM_API_KEY={v}")
-    else:
-        text = text.replace(k, v)
+lines = open("deploy/akash/maximus.yml").read().splitlines()
+clean = [ln for ln in lines if ln.strip() and not ln.lstrip().startswith("#")]
+text = "\n".join(clean) + "\n"
+text = text.replace("ghcr.io/dunk7/maximus-creative:latest", os.environ.get("MAXIMUS_IMAGE", "ghcr.io/dunk7/maximus-creative:latest"))
+text = text.replace("LLM_API_KEY=REPLACE_ME", f"LLM_API_KEY={os.environ.get('LLM_API_KEY', '')}")
+text = text.replace("GROK_API_KEY=", f"GROK_API_KEY={os.environ.get('GROK_API_KEY', '')}")
+text = text.replace("WAKE_SECRET=create", f"WAKE_SECRET={os.environ.get('WAKE_SECRET', 'create')}")
+text = text.replace("FAMILY_PASSWORD=family", f"FAMILY_PASSWORD={os.environ.get('FAMILY_PASSWORD', 'family')}")
+text = text.replace("FRIEND_PASSWORD=friend", f"FRIEND_PASSWORD={os.environ.get('FRIEND_PASSWORD', 'friend')}")
 seed = os.environ.get("MIGRATION_SEED_URL", "")
 if seed and "MIGRATION_SEED_URL" not in text:
     text = text.replace(
         "      - MAXIMUS_RUNTIME_PROFILE=akash",
         f"      - MAXIMUS_RUNTIME_PROFILE=akash\n      - MIGRATION_SEED_URL={seed}",
     )
-open(path, "w").write(text)
+ghcr = os.environ.get("GHCR_TOKEN", "")
+if ghcr and "credentials:" not in text:
+    cred = (
+        "    credentials:\n"
+        "      host: https://ghcr.io\n"
+        "      username: dunk7\n"
+        f"      password: {ghcr}\n"
+    )
+    text = text.replace("    expose:", cred + "    expose:", 1)
+open(sys.argv[1], "w").write(text)
 PY
   echo "==> SDL written: deploy/akash/maximus.deploy.yml"
 }
@@ -129,30 +131,17 @@ create_deployment() {
     --deposit "$AKASH_DEPOSIT" \
     --gas auto --gas-adjustment 1.5 --gas-prices 0.025uakt \
     -y --broadcast-mode sync -o json)"
-  DSEQ="$(echo "$result" | python3 -c "
-import json,sys
-d=json.load(sys.stdin)
-for e in d.get('events',[]):
-  if e.get('type')=='akash.v1.EventDeploymentCreated':
-    for a in e.get('attributes',[]):
-      if a.get('key')=='dseq': print(a['value']); raise SystemExit
-# fallback: parse logs
-for log in d.get('logs',[]):
-  for e in log.get('events',[]):
-    if e.get('type')=='akash.v1.EventDeploymentCreated':
-      for a in e.get('attributes',[]):
-        if a.get('key')=='dseq': print(a['value']); raise SystemExit
-print('')
-")"
-  if [ -z "$DSEQ" ]; then
-    DSEQ="$(akash query deployment list --owner "$AKASH_FROM" \
+  DSEQ="$(akash query deployment list --owner "$AKASH_FROM" \
       --node "$AKASH_NODE" -o json | python3 -c "
 import json,sys
 d=json.load(sys.stdin)
-ds=[x['deployment']['deployment_id']['dseq'] for x in d.get('deployments',[])]
-print(max(ds) if ds else '')
+active=[x for x in d.get('deployments',[]) if x['deployment']['state']=='active']
+if active:
+  print(active[-1]['deployment']['id']['dseq'])
+else:
+  ds=[int(x['deployment']['id']['dseq']) for x in d.get('deployments',[])]
+  print(max(ds) if ds else '')
 ")"
-  fi
   echo "    DSEQ: $DSEQ"
 }
 
@@ -164,13 +153,10 @@ wait_for_bids() {
       --node "$AKASH_NODE" -o json 2>/dev/null | python3 -c "
 import json,sys
 d=json.load(sys.stdin)
-bids=d.get('bids',[])
+bids=[b for b in d.get('bids',[]) if b.get('bid',{}).get('state')=='open']
 if not bids: raise SystemExit
-# pick lowest price bid with valid state
-open_bids=[b for b in bids if b.get('bid',{}).get('state')=='open']
-if not open_bids: open_bids=bids
-open_bids.sort(key=lambda b: int(b['bid']['price']['amount']))
-print(open_bids[0]['bid']['bid_id']['provider'])
+bids.sort(key=lambda b: float(b['bid']['price']['amount']))
+print(bids[0]['bid']['id']['provider'])
 " 2>/dev/null || true)"
     if [ -n "$provider" ]; then
       PROVIDER="$provider"
@@ -185,7 +171,7 @@ print(open_bids[0]['bid']['bid_id']['provider'])
 }
 
 create_lease_and_manifest() {
-  echo "==> Creating lease..."
+  echo "==> Creating lease with $PROVIDER..."
   akash tx market lease create --dseq "$DSEQ" --provider "$PROVIDER" \
     --from "$AKASH_KEY_NAME" \
     --home "$AKASH_HOME" --keyring-backend "$AKASH_KEYRING_BACKEND" \
@@ -198,7 +184,7 @@ create_lease_and_manifest() {
     --dseq "$DSEQ" --provider "$PROVIDER" \
     --from "$AKASH_KEY_NAME" \
     --home "$AKASH_HOME" --keyring-backend "$AKASH_KEYRING_BACKEND" \
-    --node "$AKASH_NODE" --chain-id "$AKASH_CHAIN_ID"
+    --node "$AKASH_NODE"
 }
 
 wait_for_uri() {
@@ -245,4 +231,6 @@ main() {
   wait_for_uri
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
+fi

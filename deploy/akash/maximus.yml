@@ -12,10 +12,14 @@ version: "2.0"
 services:
   maximus:
     image: ghcr.io/dunk7/maximus-creative:latest
+    # If GHCR package is private, set GHCR_TOKEN in .env before deploy (PAT with read:packages)
+    # credentials:
+    #   host: https://ghcr.io
+    #   username: dunk7
+    #   password: ${GHCR_TOKEN}
     expose:
       - port: 4747
         as: 80
-        proto: tcp
         to:
           - global: true
         http_options:
