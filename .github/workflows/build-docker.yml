@@ -56,6 +56,10 @@ jobs:
           echo "Checking package visibility..."
           VIS="$(gh api "/users/${USER}/packages/container/${PKG}" --jq .visibility 2>/dev/null || echo missing)"
           echo "Current visibility: ${VIS}"
+          if [ "${VIS}" = "missing" ]; then
+            echo "Package not found after push — check build logs."
+            exit 1
+          fi
           if [ "${VIS}" != "public" ]; then
             echo "Setting package to public..."
             gh api --method PATCH "/user/packages/container/${PKG}" -f visibility=public

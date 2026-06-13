@@ -8,6 +8,22 @@ COPY packages/agent-runtime/package.json packages/agent-runtime/
 COPY packages/tools/package.json packages/tools/
 COPY apps/core/package.json apps/core/
 
+# Full install (incl. devDeps) — tsc needs @types/* during build.
+RUN cp .npmrc.production .npmrc \
+  && npm ci \
+    --workspace=@maximus/agent-runtime \
+    --workspace=@maximus/tools \
+    --workspace=@maximus/core \
+  && bash -c 'rm -rf node_modules/rpc-websockets/node_modules/uuid 2>/dev/null || true'
+
+FROM node:20-bookworm-slim AS prod-deps
+
+WORKDIR /app
+COPY package.json package-lock.json .npmrc.production ./
+COPY packages/agent-runtime/package.json packages/agent-runtime/
+COPY packages/tools/package.json packages/tools/
+COPY apps/core/package.json apps/core/
+
 RUN cp .npmrc.production .npmrc \
   && npm ci --omit=dev \
     --workspace=@maximus/agent-runtime \
@@ -38,7 +54,7 @@ ENV MAXIMUS_RUNTIME_PROFILE=akash
 COPY --from=build /app/apps/core/dist ./apps/core/dist
 COPY --from=build /app/packages/agent-runtime/dist ./packages/agent-runtime/dist
 COPY --from=build /app/packages/tools/dist ./packages/tools/dist
-COPY --from=build /app/node_modules ./node_modules
+COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/packages/agent-runtime/package.json ./packages/agent-runtime/package.json
 COPY --from=build /app/packages/tools/package.json ./packages/tools/package.json

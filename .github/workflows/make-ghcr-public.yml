@@ -22,6 +22,10 @@ jobs:
           USER="${{ github.repository_owner }}"
           VIS="$(gh api "/users/${USER}/packages/container/${PKG}" --jq .visibility 2>/dev/null || echo missing)"
           echo "Current visibility: ${VIS}"
+          if [ "${VIS}" = "missing" ]; then
+            echo "Package not found yet — run Build Docker image workflow first."
+            exit 0
+          fi
           if [ "${VIS}" != "public" ]; then
             gh api --method PATCH "/user/packages/container/${PKG}" -f visibility=public
           fi
