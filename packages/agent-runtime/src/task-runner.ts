@@ -48,11 +48,69 @@ TASK EXECUTION MODE — work autonomously until done.
 
 - Use tools to make real progress. Do not stop after planning — execute.
 - Break the work into substeps and finish each one.
+- Simple runtime config (tick interval, etc.): call edit_config once — it applies on the next loop without rebuild or restart. Then reply with complete JSON.
+- Do not repeat the same tool with identical arguments more than twice. If stuck, reply blocked JSON.
 - When the task is fully complete, respond with ONLY this JSON (no markdown):
   {"status":"complete","summary":"Concrete recap: files changed, commands run, what was fixed or built — not step counts."}
 - If truly blocked (needs human input, missing credentials, impossible on this VM), respond with ONLY:
   {"status":"blocked","summary":"Why blocked, what you tried, and what is needed to continue."}
 - Otherwise keep calling tools. Do not ask the user to say "keep going".`;
+
+function isPlaceholderSummary(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  return (
+    !normalized ||
+    normalized === "(tool calls)" ||
+    normalized === "(stopped)" ||
+    normalized === "(no content)"
+  );
+}
+
+function collectToolActionLog(messages: ChatMessage[]): string {
+  const lines: string[] = [];
+  for (const m of messages) {
+    if (m.role === "tool" && m.name) {
+      lines.push(`${m.name}: ${truncate(m.content, 220)}`);
+    }
+  }
+  return lines.slice(-12).join("\n");
+}
+
+function buildFallbackTaskSummary(messages: ChatMessage[], lastSummary: string): string {
+  if (!isPlaceholderSummary(lastSummary)) return lastSummary;
+  const log = collectToolActionLog(messages);
+  if (log) return `Could not finish in time. Actions taken:\n${log}`;
+  return "Could not finish — no clear progress recorded.";
+}
+
+async function summarizeTaskOutcome(
+  config: RuntimeConfig,
+  db: Database.Database,
+  messages: ChatMessage[],
+  task: string,
+  reason: "step_limit" | "timeout"
+): Promise<string> {
+  const toolLog = collectToolActionLog(messages);
+  const tail: ChatMessage[] = [
+    ...messages,
+    {
+      role: "user",
+      content:
+        `Task ended (${reason.replace("_", " ")}). Tell the creator what you accomplished, what failed, ` +
+        `and what to do next. Plain language, 2–6 sentences. Mention config keys, files, and tool outcomes.\n\n` +
+        `Task: ${task}\n\nTool log:\n${toolLog || "(none)"}`,
+    },
+  ];
+  const response = await callLlm(config, db, tail, [], {
+    routing: { purpose: "chat", userMessage: task },
+  });
+  const text = response.content.trim();
+  return isPlaceholderSummary(text) ? "" : text;
+}
+
+function toolCallSignature(name: string, args: Record<string, unknown>): string {
+  return `${name}:${JSON.stringify(args)}`;
+}
 
 function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
@@ -140,6 +198,7 @@ export async function runAutonomousTask(
   let restartRequested = false;
   let lastSummary = "";
   let slowSubSteps = 0;
+  const recentToolSigs: string[] = [];
 
   const messages: ChatMessage[] = [
     { role: "system", content: buildTaskPrompt(db, task, goalId) },
@@ -148,17 +207,42 @@ export async function runAutonomousTask(
 
   const routingBase: CallLlmOptions = { routing: { purpose: "task", toolsOffered: taskTools.length } };
 
+  const finishWithSummary = async (
+    status: TaskRunStatus,
+    reason: "step_limit" | "timeout",
+    prefix: string
+  ): Promise<RunTaskResult> => {
+    const aiSummary = await summarizeTaskOutcome(config, db, messages, task, reason);
+    const summary =
+      aiSummary ||
+      buildFallbackTaskSummary(messages, isPlaceholderSummary(lastSummary) ? prefix : lastSummary);
+    return finalizeTask(db, task, {
+      status,
+      summary,
+      stepsTaken,
+      toolCalls,
+      toolsUsed,
+      elapsedMs: Date.now() - startedAt,
+      restartRequested,
+    });
+  };
+
   try {
     for (let step = 0; step < maxSteps; step++) {
       if (Date.now() - startedAt > maxWallMs) {
-        return finalizeTask(db, task, {
-          status: "timeout",
-          summary: `Task timed out after ${Math.round(maxWallMs / 60000)} minutes. Last progress: ${lastSummary || "none"}`,
-          stepsTaken,
-          toolCalls,
-          toolsUsed,
-          elapsedMs: Date.now() - startedAt,
-          restartRequested,
+        return finishWithSummary(
+          "timeout",
+          "timeout",
+          `Task timed out after ${Math.round(maxWallMs / 60000)} minutes.`
+        );
+      }
+
+      if (step >= maxSteps - 2) {
+        messages.push({
+          role: "user",
+          content:
+            `You have ${maxSteps - step} step(s) left. Finish now: reply with complete/blocked JSON, ` +
+            `or make one final tool call.`,
         });
       }
 
@@ -215,8 +299,23 @@ export async function runAutonomousTask(
         toolsUsed.push(call.name);
         toolCalls += 1;
 
+        const sig = toolCallSignature(call.name, call.arguments);
         const { result, restartRequested: restart } = await executeTool(call.name, call.arguments);
         if (restart) restartRequested = true;
+
+        recentToolSigs.push(sig);
+        if (recentToolSigs.length > 3) recentToolSigs.shift();
+        if (recentToolSigs.length === 3 && recentToolSigs.every((s) => s === sig)) {
+          return finalizeTask(db, task, {
+            status: "blocked",
+            summary: `Stuck repeating ${call.name} with the same arguments. Last result: ${truncate(result, 300)}`,
+            stepsTaken: stepsTaken + 1,
+            toolCalls,
+            toolsUsed,
+            elapsedMs: Date.now() - startedAt,
+            restartRequested,
+          });
+        }
 
         messages.push({
           role: "tool",
@@ -226,15 +325,11 @@ export async function runAutonomousTask(
         });
 
         if (Date.now() - startedAt > maxWallMs) {
-          return finalizeTask(db, task, {
-            status: "timeout",
-            summary: `Task timed out after ${Math.round(maxWallMs / 60000)} minutes. Last progress: ${lastSummary || "none"}`,
-            stepsTaken: stepsTaken + 1,
-            toolCalls,
-            toolsUsed,
-            elapsedMs: Date.now() - startedAt,
-            restartRequested,
-          });
+          return finishWithSummary(
+            "timeout",
+            "timeout",
+            `Task timed out after ${Math.round(maxWallMs / 60000)} minutes.`
+          );
         }
       }
 
@@ -259,15 +354,11 @@ export async function runAutonomousTask(
       }
     }
 
-    return finalizeTask(db, task, {
-      status: "step_limit",
-      summary: `Hit step limit (${maxSteps}). Last progress: ${lastSummary || "none"}`,
-      stepsTaken,
-      toolCalls,
-      toolsUsed,
-      elapsedMs: Date.now() - startedAt,
-      restartRequested,
-    });
+    return finishWithSummary(
+      "step_limit",
+      "step_limit",
+      `Hit step limit (${maxSteps}).`
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return finalizeTask(db, task, {
@@ -324,7 +415,7 @@ export function formatRunTaskResult(result: RunTaskResult): string {
     case "substep_timeout":
       return `Task stopped — substep took too long${timing}. ${result.summary}${tools}`;
     case "step_limit":
-      return `Task hit step limit${timing}. ${result.summary}${tools}`;
+      return `Task stopped at step limit${timing}. ${result.summary}${tools}`;
     case "error":
       return `Task failed${timing}. ${result.summary}${tools}`;
   }

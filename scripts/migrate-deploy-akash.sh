@@ -71,11 +71,13 @@ write_sdl() {
   local out="$ROOT/deploy/akash/maximus.deploy.yml"
   load_env
   python3 - "$out" <<'PY'
-import os, sys
+import os, sys, re
 lines = open("deploy/akash/maximus.yml").read().splitlines()
 clean = [ln for ln in lines if ln.strip() and not ln.lstrip().startswith("#") and ln.strip() != "---"]
 text = "\n".join(clean) + "\n"
-text = text.replace("ghcr.io/dunk7/maximus-creative:latest", os.environ.get("MAXIMUS_IMAGE", "ghcr.io/dunk7/maximus-creative:latest"))
+image = os.environ.get("MAXIMUS_IMAGE", "ghcr.io/dunk7/maximus-creative:latest")
+text = re.sub(r"ghcr\.io/dunk7/maximus-creative:[^\s]+", image, text)
+text = text.replace("ghcr.io/dunk7/maximus-creative:latest", image)
 text = text.replace("LLM_API_KEY=REPLACE_ME", f"LLM_API_KEY={os.environ.get('LLM_API_KEY', '')}")
 text = text.replace("GROK_API_KEY=", f"GROK_API_KEY={os.environ.get('GROK_API_KEY', '')}")
 text = text.replace("WAKE_SECRET=create", f"WAKE_SECRET={os.environ.get('WAKE_SECRET', 'create')}")
@@ -102,19 +104,18 @@ PY
 }
 
 wait_for_image() {
-  echo "==> Waiting for GHCR image (max 15 min): $MAXIMUS_IMAGE"
-  local i=0
-  while [ "$i" -lt 30 ]; do
-    local code
-    code="$(curl -s -o /dev/null -w "%{http_code}" "https://ghcr.io/v2/dunk7/maximus-creative/manifests/latest" || true)"
-    if [ "$code" = "200" ] || [ "$code" = "401" ]; then
-      # 200 = public image ready; 401 on private repo may still be pullable with provider creds
-      echo "    Image registry responded (HTTP $code)."
-      sleep 60
+  echo "==> Waiting for GitHub Actions image build (max 10 min): $MAXIMUS_IMAGE"
+  local i=0 sha="${MAXIMUS_IMAGE##*:}"
+  while [ "$i" -lt 20 ]; do
+    local status
+    status="$(curl -fsS "https://api.github.com/repos/dunk7/Maximus-Creative/actions/workflows/build-docker.yml/runs?per_page=5" \
+      | python3 -c "import json,sys; sha=sys.argv[1]; runs=json.load(sys.stdin).get('workflow_runs',[]); m=[r for r in runs if r.get('head_sha','').startswith(sha[:7]) or r.get('head_sha')==sha]; print(m[0]['status']+'/'+str(m[0].get('conclusion')) if m else 'missing')" "$sha" 2>/dev/null || echo missing)"
+    echo "    build: $status"
+    if [ "$status" = "completed/success" ]; then
+      sleep 45
       return 0
     fi
     i=$((i + 1))
-    echo "    ...building ($i/30)"
     sleep 30
   done
   echo "Continuing — image may still be building on GitHub Actions."
@@ -143,6 +144,42 @@ else:
   print(max(ds) if ds else '')
 ")"
   echo "    DSEQ: $DSEQ"
+}
+
+provider_url() {
+  if [ -n "${AKASH_PROVIDER_URL:-}" ]; then
+    echo "$AKASH_PROVIDER_URL"
+    return 0
+  fi
+  akash query provider get "$PROVIDER" --node "$AKASH_NODE" -o json 2>/dev/null \
+    | python3 -c "import json,sys; d=json.load(sys.stdin); print((d.get('provider') or d).get('host_uri',''))" \
+    || true
+}
+
+send_manifest() {
+  local url args=()
+  url="$(provider_url)"
+  if [ -n "$url" ]; then
+    args+=(--provider-url "$url")
+  fi
+  local attempt=1
+  while [ "$attempt" -le 6 ]; do
+    echo "==> Sending manifest (attempt $attempt)..."
+    local out
+    out="$(provider-services send-manifest "$ROOT/deploy/akash/maximus.deploy.yml" \
+      --dseq "$DSEQ" --provider "$PROVIDER" \
+      --from "$AKASH_KEY_NAME" \
+      --home "$AKASH_HOME" --keyring-backend "$AKASH_KEYRING_BACKEND" \
+      --node "$AKASH_NODE" "${args[@]}" 2>&1)" || true
+    echo "$out"
+    if echo "$out" | grep -q "status:       PASS"; then
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    sleep 30
+  done
+  echo "Manifest send failed after retries." >&2
+  return 1
 }
 
 wait_for_bids() {
@@ -179,12 +216,7 @@ create_lease_and_manifest() {
     --gas auto --gas-adjustment 1.5 --gas-prices 0.025uakt \
     -y --broadcast-mode sync
 
-  echo "==> Sending manifest..."
-  provider-services send-manifest "$ROOT/deploy/akash/maximus.deploy.yml" \
-    --dseq "$DSEQ" --provider "$PROVIDER" \
-    --from "$AKASH_KEY_NAME" \
-    --home "$AKASH_HOME" --keyring-backend "$AKASH_KEYRING_BACKEND" \
-    --node "$AKASH_NODE"
+  send_manifest
 }
 
 wait_for_uri() {

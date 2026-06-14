@@ -40,7 +40,7 @@ The live snapshot in `read_runtime_environment()` shows current free/total — t
 - **systemd MemoryMax:** 280 MB for the Maximus process
 - **Node heap:** `--max-old-space-size=128`
 - **CPU quota:** 35% of one core
-- **Tick interval:** 30 minutes (`TICK_INTERVAL_MS=1800000`)
+- **Tick interval:** 1 hour (`TICK_INTERVAL_MS=3600000`)
 - **Boot tick delay:** 60s after start (lets SSH settle)
 - **Max tool calls per autonomous tick:** 3
 - **Chat `run_task` timeout:** 5 minutes default (8 max)

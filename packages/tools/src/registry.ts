@@ -241,7 +241,8 @@ const STATIC_TOOLS: ToolDefinition[] = [
   },
   {
     name: "edit_config",
-    description: "Update a runtime config key stored in the database.",
+    description:
+      "Update a runtime config key in the database. For tick interval use key=tick_interval_ms value=3600000 (1h) or 1800000 (30m). Takes effect on the next loop tick — no rebuild needed.",
     parameters: {
       type: "object",
       properties: { key: { type: "string" }, value: { type: "string" } },

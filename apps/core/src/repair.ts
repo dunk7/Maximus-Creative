@@ -20,13 +20,16 @@ export function runStartupRepair(): void {
     .get() as { value: string } | undefined;
 
   if (config.repoRoot === "/opt/maximus") {
-    // Production VM: enforce default tick interval in DB on every startup
     const target = String(DEFAULT_TICK_INTERVAL_MS);
-    if (!override || override.value !== target) {
+    if (!override) {
       setRuntimeSetting(db, "tick_interval_ms", target);
-      console.warn(
-        `[Repair] DB tick_interval_ms ${override ? `was ${override.value}` : "missing"} — set to ${target}`
-      );
+      console.warn(`[Repair] DB tick_interval_ms missing — set to ${target}`);
+    } else {
+      const clamped = clampTickIntervalMs(Number(override.value));
+      if (String(clamped) !== override.value) {
+        setRuntimeSetting(db, "tick_interval_ms", String(clamped));
+        console.warn(`[Repair] Tick interval was ${override.value}ms — clamped to ${clamped}ms`);
+      }
     }
   } else if (override) {
     const target = clampTickIntervalMs(Number(override.value));
@@ -59,15 +62,17 @@ export function runStartupRepair(): void {
   if (fs.existsSync(envPath)) {
     const env = fs.readFileSync(envPath, "utf8");
     const match = env.match(/^TICK_INTERVAL_MS=(\d+)/m);
-    if (config.repoRoot === "/opt/maximus") {
-      if (!match || match[1] !== String(DEFAULT_TICK_INTERVAL_MS)) {
-        const fixed = match
-          ? env.replace(/^TICK_INTERVAL_MS=.*/m, `TICK_INTERVAL_MS=${DEFAULT_TICK_INTERVAL_MS}`)
-          : `${env.trimEnd()}\nTICK_INTERVAL_MS=${DEFAULT_TICK_INTERVAL_MS}\n`;
-        fs.writeFileSync(envPath, fixed, "utf8");
-        console.warn(`[Repair] .env TICK_INTERVAL_MS set to ${DEFAULT_TICK_INTERVAL_MS}`);
-      }
-    } else if (match && Number(match[1]) < 60_000) {
+    const dbTick = db
+      .prepare("SELECT value FROM runtime_config WHERE key = 'tick_interval_ms'")
+      .get() as { value: string } | undefined;
+    const effective = dbTick?.value ?? String(DEFAULT_TICK_INTERVAL_MS);
+    if (!match || match[1] !== effective) {
+      const fixed = match
+        ? env.replace(/^TICK_INTERVAL_MS=.*/m, `TICK_INTERVAL_MS=${effective}`)
+        : `${env.trimEnd()}\nTICK_INTERVAL_MS=${effective}\n`;
+      fs.writeFileSync(envPath, fixed, "utf8");
+      console.warn(`[Repair] .env TICK_INTERVAL_MS synced to ${effective}`);
+    } else if (config.repoRoot !== "/opt/maximus" && match && Number(match[1]) < 60_000) {
       const fixed = env.replace(/^TICK_INTERVAL_MS=.*/m, `TICK_INTERVAL_MS=${DEFAULT_TICK_INTERVAL_MS}`);
       fs.writeFileSync(envPath, fixed, "utf8");
       console.warn(`[Repair] .env TICK_INTERVAL_MS reset to ${DEFAULT_TICK_INTERVAL_MS}`);
