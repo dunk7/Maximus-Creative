@@ -37,7 +37,7 @@ export function buildLiveRuntimeSnapshot(): string {
 
   const caps =
     profile === "akash"
-      ? `Your caps: ~${nodeHeap} MB Node heap, 2 Gi container RAM, 3 tools per tick, 2 min run_task in chat.`
+      ? `Your caps: ~${nodeHeap} MB Node heap, 2 Gi container RAM, 3 tools per tick, 5 min run_task in chat.`
       : "Your caps: 280 MB process max, 128 MB Node heap";
 
   return [
@@ -65,8 +65,8 @@ export function buildRuntimeEnvironmentBrief(config: RuntimeConfig, maxChars = 8
         ? "Plan for ~500 MB TOTAL system RAM. Oracle says 1 GB — that is wrong for planning. Do not assume 1 GB."
         : "",
     profile === "akash"
-      ? "Caps: ~768 MB Node heap / 2 Gi container / 3 tools per tick / 2 min run_task in chat."
-      : "Caps: 280 MB process / 128 MB Node heap / 3 tools per tick / 2 min run_task in chat.",
+      ? "Caps: ~768 MB Node heap / 2 Gi container / 3 tools per tick / 5 min run_task in chat."
+      : "Caps: 280 MB process / 128 MB Node heap / 3 tools per tick / 5 min run_task in chat.",
   ]
     .filter(Boolean)
     .join("\n");

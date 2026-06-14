@@ -43,7 +43,7 @@ The live snapshot in `read_runtime_environment()` shows current free/total — t
 - **Tick interval:** 30 minutes (`TICK_INTERVAL_MS=1800000`)
 - **Boot tick delay:** 60s after start (lets SSH settle)
 - **Max tool calls per autonomous tick:** 3
-- **Chat `run_task` timeout:** 2 minutes max
+- **Chat `run_task` timeout:** 5 minutes default (8 max)
 - **Tick timeout:** 3 minutes max
 - **Low-memory tick skip:** skipped when free RAM < ~220 MB
 
@@ -67,7 +67,7 @@ This is a **~512 MB machine**, not a 1 GB machine. The whole VM can freeze if yo
 ## Avoid (risks, not hard blocks for creative)
 
 - **OOM-freezing the box** — npm install, rebuild_core, and heavy compiles share ~500 MB total RAM; check free memory first
-- `run_task` with many steps on this host — cap is 2 minutes in chat
+- `run_task` with many steps on this host — default 5 minutes in chat (8 max)
 - `list_files` on huge trees repeatedly
 - Killing your own process via shell — use **self_restart** instead
 - **Thinking you have 1 GB** — you do not; see "RAM — read this first" above

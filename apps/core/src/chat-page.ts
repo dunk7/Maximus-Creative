@@ -1,4 +1,5 @@
 import { LUCIDE_CSS, lucide } from "./ui-icons.js";
+import { CHAT_STREAM_TIMEOUT_MS } from "./agent-lock.js";
 
 export function renderChatPage(): string {
   const i = lucide;
@@ -1028,7 +1029,7 @@ export function renderChatPage(): string {
       let replyBubble = null;
       let buffer = "";
       const streamAbort = new AbortController();
-      const streamTimer = setTimeout(() => streamAbort.abort(), 120000);
+      const streamTimer = setTimeout(() => streamAbort.abort(), ${CHAT_STREAM_TIMEOUT_MS});
       try {
         const res = await fetch("/threads/" + currentThread.id + "/chat/stream", {
           method: "POST",

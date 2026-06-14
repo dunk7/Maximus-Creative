@@ -2,6 +2,8 @@ const LOCK_STALE_MS = 10 * 60 * 1000;
 const DEFAULT_MAX_WAIT_MS = 120_000;
 /** Chat/HTTP handlers must not hang — return 503 after this wait. */
 export const CHAT_LOCK_MAX_WAIT_MS = 20_000;
+/** Client + server must allow long chat streams while run_task works (default task limit is 5 min). */
+export const CHAT_STREAM_TIMEOUT_MS = 6 * 60 * 1000;
 
 export type AgentBusyReason = "tick" | "chat";
 

@@ -24,7 +24,7 @@ import {
 } from "@maximus/agent-runtime";
 import { resolveAccess } from "./access-auth.js";
 import { executeApprovedSend, rejectPendingSend } from "./approve-send.js";
-import { CHAT_LOCK_MAX_WAIT_MS, withAgentLock } from "./agent-lock.js";
+import { CHAT_LOCK_MAX_WAIT_MS, CHAT_STREAM_TIMEOUT_MS, withAgentLock } from "./agent-lock.js";
 import { renderChatPage } from "./chat-page.js";
 import { renderDashboardPage } from "./dashboard-page.js";
 import { buildAgentStatus } from "./status.js";
@@ -452,9 +452,9 @@ export function startWakeServer(
     process.exit(1);
   });
 
-  server.timeout = 120_000;
+  server.timeout = CHAT_STREAM_TIMEOUT_MS;
   server.keepAliveTimeout = 65_000;
-  server.headersTimeout = 70_000;
+  server.headersTimeout = CHAT_STREAM_TIMEOUT_MS + 5_000;
 
   server.listen(config.wakePort, () => {
     console.log(`Wake server listening on :${config.wakePort}`);

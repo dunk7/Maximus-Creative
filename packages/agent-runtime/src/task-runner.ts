@@ -49,9 +49,9 @@ TASK EXECUTION MODE — work autonomously until done.
 - Use tools to make real progress. Do not stop after planning — execute.
 - Break the work into substeps and finish each one.
 - When the task is fully complete, respond with ONLY this JSON (no markdown):
-  {"status":"complete","summary":"what you accomplished"}
+  {"status":"complete","summary":"Concrete recap: files changed, commands run, what was fixed or built — not step counts."}
 - If truly blocked (needs human input, missing credentials, impossible on this VM), respond with ONLY:
-  {"status":"blocked","summary":"why blocked and what is needed"}
+  {"status":"blocked","summary":"Why blocked, what you tried, and what is needed to continue."}
 - Otherwise keep calling tools. Do not ask the user to say "keep going".`;
 
 function truncate(text: string, max: number): string {
@@ -224,6 +224,18 @@ export async function runAutonomousTask(
           content: truncate(result, MAX_TOOL_RESULT_CHARS),
           tool_call_id: `task-${step}-${call.name}-${toolCalls}`,
         });
+
+        if (Date.now() - startedAt > maxWallMs) {
+          return finalizeTask(db, task, {
+            status: "timeout",
+            summary: `Task timed out after ${Math.round(maxWallMs / 60000)} minutes. Last progress: ${lastSummary || "none"}`,
+            stepsTaken: stepsTaken + 1,
+            toolCalls,
+            toolsUsed,
+            elapsedMs: Date.now() - startedAt,
+            restartRequested,
+          });
+        }
       }
 
       stepsTaken += 1;

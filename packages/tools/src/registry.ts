@@ -201,7 +201,7 @@ const STATIC_TOOLS: ToolDefinition[] = [
         },
         timeout_minutes: {
           type: "number",
-          description: "Wall-clock limit in minutes (default 8 chat / 4 tick, max 15).",
+          description: "Wall-clock limit in minutes (default 5 chat / 4 tick, max 8 chat / 4 tick).",
         },
       },
       required: ["task"],
@@ -598,10 +598,11 @@ export function createToolExecutor(
         const goalId = args.goal_id != null ? Number(args.goal_id) : undefined;
         const maxSteps =
           args.max_steps != null ? Math.min(Math.max(1, Number(args.max_steps)), 60) : undefined;
-        const defaultTimeout = tickMode ? 4 : 2;
+        const maxTimeout = tickMode ? 4 : 8;
+        const defaultTimeout = tickMode ? 4 : 5;
         const timeoutMinutes =
           args.timeout_minutes != null
-            ? Math.min(Math.max(1, Number(args.timeout_minutes)), tickMode ? 4 : 2)
+            ? Math.min(Math.max(1, Number(args.timeout_minutes)), maxTimeout)
             : defaultTimeout;
 
         const innerExecutor = createToolExecutor(db, config, keypair, role, { tickMode: false });
