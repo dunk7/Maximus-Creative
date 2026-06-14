@@ -75,7 +75,6 @@ import os, sys
 lines = open("deploy/akash/maximus.yml").read().splitlines()
 clean = [ln for ln in lines if ln.strip() and not ln.lstrip().startswith("#") and ln.strip() != "---"]
 text = "\n".join(clean) + "\n"
-text = text.replace("BUILD_REV=dev", f"BUILD_REV={os.environ.get('BUILD_REV', 'dev')}")
 text = text.replace("ghcr.io/dunk7/maximus-creative:latest", os.environ.get("MAXIMUS_IMAGE", "ghcr.io/dunk7/maximus-creative:latest"))
 text = text.replace("LLM_API_KEY=REPLACE_ME", f"LLM_API_KEY={os.environ.get('LLM_API_KEY', '')}")
 text = text.replace("GROK_API_KEY=", f"GROK_API_KEY={os.environ.get('GROK_API_KEY', '')}")

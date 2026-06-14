@@ -35,6 +35,7 @@ RUN cp .npmrc.production .npmrc \
 
 FROM node:20-bookworm-slim AS build
 
+# Cache bust: UI polish 3f62e71
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json package-lock.json tsconfig.base.json ./

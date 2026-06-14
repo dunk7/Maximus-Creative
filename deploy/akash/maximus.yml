@@ -24,7 +24,6 @@ services:
           - global: true
     env:
       - MAXIMUS_RUNTIME_PROFILE=akash
-      - BUILD_REV=dev
       - MIGRATION_SEED_URL=https://files.catbox.moe/f5fgml.gz
       - NODE_OPTIONS=--max-old-space-size=768
       - TICK_INTERVAL_MS=1800000
