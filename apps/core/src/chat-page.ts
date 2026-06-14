@@ -133,6 +133,15 @@ export function renderChatPage(): string {
       justify-content: center;
       flex-shrink: 0;
     }
+    .icon-btn svg {
+      width: 18px;
+      height: 18px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
     .text-btn {
       padding: 0.55rem 0.9rem;
       font-weight: 600;
@@ -452,7 +461,7 @@ export function renderChatPage(): string {
       </div>
     </div>
     <span class="role-badge" id="roleBadge" style="display:none"></span>
-    <button class="icon-btn danger-btn" id="deleteChatBtn" style="display:none" type="button" title="Delete chat" aria-label="Delete chat">🗑</button>
+    <button class="icon-btn danger-btn" id="deleteChatBtn" style="display:none" type="button" title="Delete chat" aria-label="Delete chat"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg></button>
     <a class="text-btn" id="dashboardLink" href="/dashboard" style="text-decoration:none;display:inline-flex;align-items:center">Status</a>
     <button class="text-btn" id="newChatBtn" style="display:none" type="button">+ New</button>
   </header>

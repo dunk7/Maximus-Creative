@@ -192,12 +192,10 @@ export async function fetchWalletSnapshot(
   }
 }
 
-function summarizeFromToolResults(messages: ChatMessage[]): string | null {
-  const toolMessages = messages.filter((m) => m.role === "tool");
-  if (toolMessages.length === 0) return null;
-  const last = toolMessages[toolMessages.length - 1]!;
-  const snippet = last.content.trim().slice(0, 600);
-  return snippet ? `Here's what I found: ${snippet}` : null;
+function safeFallbackAfterTools(messages: ChatMessage[]): string {
+  const names = [...new Set(messages.filter((m) => m.role === "tool" && m.name).map((m) => m.name!))];
+  const tools = names.length > 0 ? ` (used ${names.join(", ")})` : "";
+  return `I ran some checks${tools} but couldn't put together a clean answer. Try asking again in plain language.`;
 }
 
 async function synthesizeReply(
@@ -208,7 +206,9 @@ async function synthesizeReply(
 ): Promise<string> {
   messages.push({
     role: "system",
-    content: "Write your final reply to the user based on the tool results above. Be direct.",
+    content:
+      "Write your final reply to the user based on the tool results above. Be direct and conversational. " +
+      "Never paste raw shell output, file contents, or source code unless the user explicitly asked to see them.",
   });
   const routing: CallLlmOptions = {
     routing: { purpose: "synthesis", userMessage },
@@ -306,7 +306,7 @@ async function runChatWithTools(
   }
 
   if (isPlaceholderReply(reply)) {
-    reply = summarizeFromToolResults(messages) ?? "";
+    reply = usedTools ? safeFallbackAfterTools(messages) : "";
   }
 
   if (isPlaceholderReply(reply)) {
