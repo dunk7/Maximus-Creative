@@ -2,7 +2,7 @@
  * Cloudflare Worker — proxy maximus.voronyz.com → Akash ingress.
  * Deploy: Workers & Pages → Create → paste → Deploy → add custom domain maximus.voronyz.com
  */
-const ORIGIN = "https://lff9b5psb5f5d2qoel9p49rvbs.ingress.jjozzietech.com.au";
+const ORIGIN = "https://qv59d2a5k5fvre2m9ams4316p4.ingress.jjozzietech.com.au";
 
 export default {
   async fetch(request) {
