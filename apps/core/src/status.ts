@@ -4,8 +4,11 @@ import {
   listCreatorMessages,
   listGoals,
   listJournal,
+  listMemories,
   loadConfig,
   resolveTickIntervalMs,
+  formatTickIntervalLabel,
+  type MemoryRow,
   type RuntimeConfig,
 } from "@maximus/agent-runtime";
 import { getAgentBusyState } from "./agent-lock.js";
@@ -25,6 +28,20 @@ export interface AgentStatus {
   wallet_balance_sol: number | null;
   active_goals: number;
   memory_count: number;
+  tick_interval_ms: number;
+  tick_interval_label: string;
+  recent_memories: MemoryRow[];
+  last_task: {
+    at: string | null;
+    status: string | null;
+    summary: string | null;
+  };
+  task_history: Array<{
+    at: string;
+    status: string;
+    summary: string;
+    task: string;
+  }>;
   active_llm: {
     provider: string | null;
     model: string | null;
@@ -72,6 +89,14 @@ export async function buildAgentStatus(
     | undefined;
   const wallet = await loadWalletSnapshot(config);
   const memoryCount = db.prepare("SELECT COUNT(*) as c FROM memories").get() as { c: number };
+  const tickMs = resolveTickIntervalMs(config, db);
+  let taskHistory: AgentStatus["task_history"] = [];
+  try {
+    const raw = getMeta(db, "task_history");
+    if (raw) taskHistory = JSON.parse(raw) as AgentStatus["task_history"];
+  } catch {
+    taskHistory = [];
+  }
 
   const data: Omit<AgentStatus, "uptime_seconds" | "agent_busy" | "busy_reason"> = {
     ok: true,
@@ -86,6 +111,15 @@ export async function buildAgentStatus(
     wallet_balance_sol: wallet.balanceSol,
     active_goals: listGoals(db, "active").length,
     memory_count: memoryCount.c,
+    tick_interval_ms: tickMs,
+    tick_interval_label: formatTickIntervalLabel(tickMs),
+    recent_memories: listMemories(db, 24),
+    last_task: {
+      at: getMeta(db, "last_task_at"),
+      status: getMeta(db, "last_task_status"),
+      summary: getMeta(db, "last_task_summary"),
+    },
+    task_history: taskHistory.slice(0, 5),
     active_llm: {
       provider: getMeta(db, "active_llm_provider"),
       model: getMeta(db, "active_llm_model"),

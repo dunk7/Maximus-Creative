@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { setMeta } from "./db.js";
+import { getMeta, setMeta } from "./db.js";
 import { readCreatorIntent } from "./genesis.js";
 import { listGoals } from "./goals.js";
 import { getIdentity } from "./identity.js";
@@ -49,7 +49,9 @@ TASK EXECUTION MODE — work autonomously until done.
 - Use tools to make real progress. Do not stop after planning — execute.
 - Break the work into substeps and finish each one.
 - Simple runtime config (tick interval, etc.): call edit_config once — it applies on the next loop without rebuild or restart. Then reply with complete JSON.
-- UI changes: edit apps/core/src/chat-page.ts or dashboard-page.ts → rebuild_core → self_restart. Never edit dist/*.js.
+- UI changes: edit apps/core/src/chat-page.ts or apps/core/src/dashboard-page.ts or apps/core/src/status.ts → rebuild_core → self_restart. Never edit dist/*.js.
+- File edits: read_file first, then edit_file with the full new file content. Never use run_shell to paste or echo source code into files.
+- If rebuild_core fails: read the TypeScript errors in the tool output, fix imports/types, then rebuild — do not repeat the same broken edit.
 - Do not repeat the same tool with identical arguments more than twice. If stuck, reply blocked JSON.
 - When the task is fully complete, respond with ONLY this JSON (no markdown):
   {"status":"complete","summary":"Concrete recap: files changed, commands run, what was fixed or built — not step counts."}
@@ -137,6 +139,26 @@ function parseTaskStatus(text: string): { status: "complete" | "blocked"; summar
   return null;
 }
 
+function buildRecentTaskContext(db: Database.Database): string {
+  let history: Array<{ at: string; status: string; summary: string; task: string }> = [];
+  try {
+    const raw = getMeta(db, "task_history");
+    if (raw) history = JSON.parse(raw);
+  } catch {
+    history = [];
+  }
+  if (history.length === 0) return "";
+
+  const lines = history.slice(0, 4).map((h, i) => {
+    const label = i === 0 ? "Most recent" : `Prior #${i + 1}`;
+    return `${label} (${h.status}): ${truncate(h.task, 120)} → ${truncate(h.summary, 220)}`;
+  });
+  return [
+    "Recent task outcomes — learn from these; do not repeat the same failed approach:",
+    ...lines,
+  ].join("\n");
+}
+
 function buildTaskPrompt(db: Database.Database, task: string, goalId?: number): string {
   const identity = getIdentity(db);
   const goals = listGoals(db, "active")
@@ -164,6 +186,8 @@ function buildTaskPrompt(db: Database.Database, task: string, goalId?: number): 
     "",
     `Active goals:\n${goals || "(none)"}`,
     goalLine,
+    "",
+    buildRecentTaskContext(db),
     "",
     `TASK TO COMPLETE:\n${task}`,
   ]
@@ -200,6 +224,7 @@ export async function runAutonomousTask(
   let lastSummary = "";
   let slowSubSteps = 0;
   const recentToolSigs: string[] = [];
+  const recentToolNames: string[] = [];
 
   const messages: ChatMessage[] = [
     { role: "system", content: buildTaskPrompt(db, task, goalId) },
@@ -306,6 +331,23 @@ export async function runAutonomousTask(
 
         recentToolSigs.push(sig);
         if (recentToolSigs.length > 3) recentToolSigs.shift();
+        recentToolNames.push(call.name);
+        if (recentToolNames.length > 5) recentToolNames.shift();
+
+        const shellRepeats = recentToolNames.filter((n) => n === "run_shell").length;
+        if (call.name === "run_shell" && shellRepeats >= 3) {
+          return finalizeTask(db, task, {
+            status: "blocked",
+            summary:
+              "Stopped: run_shell used repeatedly for file edits. Use read_file + edit_file instead, then rebuild_core.",
+            stepsTaken: stepsTaken + 1,
+            toolCalls,
+            toolsUsed,
+            elapsedMs: Date.now() - startedAt,
+            restartRequested,
+          });
+        }
+
         if (recentToolSigs.length === 3 && recentToolSigs.every((s) => s === sig)) {
           return finalizeTask(db, task, {
             status: "blocked",
@@ -374,6 +416,26 @@ export async function runAutonomousTask(
   }
 }
 
+function appendTaskHistory(
+  db: Database.Database,
+  entry: { task: string; status: string; summary: string; at: string }
+): void {
+  let history: Array<{ task: string; status: string; summary: string; at: string }> = [];
+  try {
+    const raw = getMeta(db, "task_history");
+    if (raw) history = JSON.parse(raw);
+  } catch {
+    history = [];
+  }
+  history.unshift({
+    task: truncate(entry.task, 300),
+    status: entry.status,
+    summary: truncate(entry.summary, 500),
+    at: entry.at,
+  });
+  setMeta(db, "task_history", JSON.stringify(history.slice(0, 8)));
+}
+
 function finalizeTask(
   db: Database.Database,
   task: string,
@@ -388,6 +450,12 @@ function finalizeTask(
   setMeta(db, "last_task_at", new Date().toISOString());
   setMeta(db, "last_task_status", record.status);
   setMeta(db, "last_task_summary", truncate(record.summary, 500));
+  appendTaskHistory(db, {
+    task,
+    status: record.status,
+    summary: record.summary,
+    at: new Date().toISOString(),
+  });
 
   if (record.status === "completed") {
     writeMemory(
@@ -395,6 +463,13 @@ function finalizeTask(
       "procedural",
       `Task completed: ${truncate(task, 200)} → ${truncate(record.summary, 400)}`,
       0.75
+    );
+  } else if (record.status === "blocked" || record.status === "step_limit" || record.status === "error") {
+    writeMemory(
+      db,
+      "procedural",
+      `Task ${record.status}: ${truncate(task, 180)} → ${truncate(record.summary, 400)}`,
+      0.8
     );
   }
 

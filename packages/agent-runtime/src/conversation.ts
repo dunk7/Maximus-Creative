@@ -154,6 +154,13 @@ function memoriesForPrompt(db: Database.Database, userMessage: string): string {
     .join("\n");
 }
 
+function buildLastTaskLine(db: Database.Database): string {
+  const summary = getMeta(db, "last_task_summary");
+  const status = getMeta(db, "last_task_status");
+  if (!summary || !status) return "";
+  return `Last autonomous task (${status}): ${summary.slice(0, 450)}`;
+}
+
 function buildConversationPrompt(
   db: Database.Database,
   config: RuntimeConfig,
@@ -174,6 +181,7 @@ function buildConversationPrompt(
     buildTaskPromptSection(userMessage, role),
     buildConversationalHint(userMessage),
     formatTickIntervalLine(config, db),
+    buildLastTaskLine(db),
     formatWalletLine(wallet),
     memories ? `Recent memories (may be stale — use read_memories for recall):\n${memories}` : "",
   ]

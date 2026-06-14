@@ -120,6 +120,24 @@ export function renderDashboardPage(): string {
       border-radius: var(--radius);
     }
     .journal .meta { color: var(--text-muted); font-size: 0.78rem; margin-bottom: 0.35rem; }
+    .memory-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.55rem; }
+    .memory-list li {
+      padding: 0.85rem 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 0.88rem;
+    }
+    .memory-list .meta { color: var(--text-muted); font-size: 0.75rem; margin-bottom: 0.3rem; }
+    .memory-type {
+      display: inline-block;
+      font-size: 0.68rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #91a7ff;
+      margin-right: 0.35rem;
+    }
     .offline {
       padding: 1.25rem;
       border: 1px solid #e0313144;
@@ -189,6 +207,8 @@ export function renderDashboardPage(): string {
       wallet: ${JSON.stringify(i("wallet", 14))},
       bot: ${JSON.stringify(i("bot", 14))},
       bookOpen: ${JSON.stringify(i("bookOpen", 16))},
+      brain: ${JSON.stringify(i("brain", 16))},
+      clock: ${JSON.stringify(i("clock", 14))},
       x: ${JSON.stringify(i("x", 20))},
     };
 
@@ -210,6 +230,7 @@ export function renderDashboardPage(): string {
       let html = '<div class="grid">';
       html += stat("Tick", "#" + status.tick_number, "activity");
       html += stat("Uptime", uptime, "refreshCw");
+      html += stat("Tick interval", status.tick_interval_label || "—", "clock");
       html += stat("Goals", String(status.active_goals), "target");
       html += stat("Memories", String(status.memory_count), "brain");
       html += stat("Balance", bal, "wallet");
@@ -232,6 +253,28 @@ export function renderDashboardPage(): string {
         html += '<ul class="journal">';
         for (const e of journal) {
           html += '<li><div class="meta">Tick #' + e.tick_number + " · " + esc(e.created_at) + "</div><div>" + esc(e.content) + "</div></li>";
+        }
+        html += "</ul>";
+      }
+      html += "</section>";
+
+      if (status.last_task && status.last_task.summary) {
+        html += "<section><h2>" + ICONS.clock + "<span>Last task</span></h2>";
+        html += '<div class="card"><div class="meta">' + esc(status.last_task.status || "unknown") +
+          (status.last_task.at ? " · " + esc(status.last_task.at) : "") +
+          "</div><div>" + esc(status.last_task.summary) + "</div></div></section>";
+      }
+
+      html += "<section><h2>" + ICONS.brain + "<span>Memories</span></h2>";
+      const memories = status.recent_memories || [];
+      if (!memories.length) {
+        html += '<p style="color:var(--text-muted);font-size:0.9rem">No memories stored yet.</p>';
+      } else {
+        html += '<ul class="memory-list">';
+        for (const m of memories) {
+          html += '<li><div class="meta"><span class="memory-type">' + esc(m.type) +
+            "</span>#" + m.id + " · imp " + m.importance + " · " + esc(m.created_at) +
+            "</div><div>" + esc(m.content) + "</div></li>";
         }
         html += "</ul>";
       }

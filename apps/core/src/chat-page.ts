@@ -651,6 +651,7 @@ export function renderChatPage(): string {
 
   <script>
     const SITE_KEY = "maximus_site_password";
+    const ACTIVE_THREAD_KEY = "maximus_active_thread";
     let currentThread = null;
     let pendingThread = null;
     let sessionRole = null;
@@ -672,6 +673,7 @@ export function renderChatPage(): string {
     const activityFeed = document.getElementById("activityFeed");
     const tickBanner = document.getElementById("tickBanner");
     let activityPollTimer = null;
+    let pendingPollTimer = null;
     const solModal = document.getElementById("solModal");
     let pendingSolId = null;
     const threadList = document.getElementById("threadList");
@@ -705,6 +707,56 @@ export function renderChatPage(): string {
       if (activityPollTimer) return;
       pollAgentActivity();
       activityPollTimer = setInterval(pollAgentActivity, 5000);
+    }
+
+    function stopPendingPoll() {
+      if (pendingPollTimer) {
+        clearInterval(pendingPollTimer);
+        pendingPollTimer = null;
+      }
+    }
+
+    function startPendingPoll() {
+      stopPendingPoll();
+      pendingPollTimer = setInterval(() => {
+        loadThreadMessages({ quiet: true }).catch(() => {});
+      }, 3000);
+    }
+
+    function saveActiveThread(thread) {
+      if (!thread) {
+        sessionStorage.removeItem(ACTIVE_THREAD_KEY);
+        return;
+      }
+      sessionStorage.setItem(
+        ACTIVE_THREAD_KEY,
+        JSON.stringify({ id: thread.id, title: thread.title, is_locked: !!thread.is_locked })
+      );
+    }
+
+    function loadActiveThread() {
+      try {
+        const raw = sessionStorage.getItem(ACTIVE_THREAD_KEY);
+        return raw ? JSON.parse(raw) : null;
+      } catch {
+        return null;
+      }
+    }
+
+    function renderMessageRows(rows) {
+      messagesEl.innerHTML = "";
+      let hasPending = false;
+      for (const row of rows) {
+        addBubble(row.content, "you");
+        if (row.response) {
+          addBubble(row.response, "maximus");
+        } else if (row.status === "pending") {
+          hasPending = true;
+          showTyping();
+        }
+      }
+      if (hasPending) startPendingPoll();
+      else stopPendingPoll();
     }
 
     function stopActivityPoll() {
@@ -1005,6 +1057,7 @@ export function renderChatPage(): string {
 
     async function enterThread(thread) {
       currentThread = thread;
+      saveActiveThread(thread);
       headerTitle.textContent = thread.title;
       deleteChatBtn.style.display =
         sessionRole === "creative" && thread.id !== 1 ? "inline-flex" : "none";
@@ -1015,8 +1068,9 @@ export function renderChatPage(): string {
       input.focus();
     }
 
-    async function loadThreadMessages() {
-      showMessageSkeletons();
+    async function loadThreadMessages(opts) {
+      const quiet = opts && opts.quiet;
+      if (!quiet) showMessageSkeletons();
       const res = await fetch("/threads/" + currentThread.id + "/messages", {
         headers: authHeaders(currentThread.id)
       });
@@ -1027,10 +1081,10 @@ export function renderChatPage(): string {
       }
       if (!res.ok) throw new Error("Could not load messages");
       const data = await res.json();
-      messagesEl.innerHTML = "";
-      for (const row of (data.messages || []).slice().reverse()) {
-        addBubble(row.content, "you");
-        if (row.response) addBubble(row.response, "maximus");
+      const rows = (data.messages || []).slice().reverse();
+      renderMessageRows(rows);
+      if (!rows.some((r) => r.status === "pending" && !r.response)) {
+        hideTyping();
       }
     }
 
@@ -1136,6 +1190,7 @@ export function renderChatPage(): string {
               showSolApproval(data.id, data.to, data.amount_sol);
             }
             if (event === "done") {
+              stopPendingPoll();
               hideTyping();
               if (!replyBubble) replyBubble = addBubble("", "maximus");
               setBubbleContent(replyBubble, data.response || replyBubble.dataset.raw || "", "maximus");
@@ -1156,6 +1211,11 @@ export function renderChatPage(): string {
         loadStatusMeta();
       } catch (err) {
         hideTyping();
+        if (err.name === "AbortError" && currentThread) {
+          startPendingPoll();
+          showToast("Still working — check back in a moment", "");
+          return;
+        }
         if (!replyBubble) replyBubble = addBubble("", "maximus");
         const msg = err.name === "AbortError"
           ? "Request timed out — Maximus may be busy. Try again."
@@ -1231,6 +1291,15 @@ export function renderChatPage(): string {
     async function enterAfterUnlock() {
       startActivityPoll();
       await loadStatusMeta();
+      const saved = loadActiveThread();
+      if (saved && saved.id) {
+        try {
+          await enterThread(saved);
+          return;
+        } catch {
+          sessionStorage.removeItem(ACTIVE_THREAD_KEY);
+        }
+      }
       if (sessionRole === "friend") {
         const res = await fetch("/threads", { headers: authHeaders(0) });
         if (!res.ok) throw new Error("Could not load chats");
@@ -1347,10 +1416,18 @@ export function renderChatPage(): string {
     backBtn.onclick = async () => {
       if (sessionRole === "friend") return;
       currentThread = null;
+      saveActiveThread(null);
+      stopPendingPoll();
       headerTitle.textContent = "Chats";
       showScreen("threads");
       await loadThreads();
     };
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible" && currentThread) {
+        loadThreadMessages({ quiet: true }).catch(() => {});
+      }
+    });
 
     (async () => {
       if (!sitePassword()) return;
