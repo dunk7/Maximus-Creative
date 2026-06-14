@@ -9,6 +9,10 @@
 ---
 version: "2.0"
 
+endpoints:
+  maximus-ip:
+    kind: ip
+
 services:
   maximus:
     image: ghcr.io/dunk7/maximus-creative:latest
@@ -19,13 +23,11 @@ services:
     #   password: ${GHCR_TOKEN}
     expose:
       - port: 4747
-        as: 80
+        as: 4747
+        proto: tcp
         to:
           - global: true
-        http_options:
-          max_body_size: 1048576
-          read_timeout: 60000
-          send_timeout: 60000
+            ip: maximus-ip
     env:
       - MAXIMUS_RUNTIME_PROFILE=akash
       - MIGRATION_SEED_URL=https://files.catbox.moe/f5fgml.gz
@@ -85,6 +87,9 @@ profiles:
         maximus:
           denom: uact
           amount: 8000
+        maximus-ip:
+          denom: uact
+          amount: 5000
 
 deployment:
   maximus:
