@@ -189,7 +189,36 @@ export function renderChatPage(): string {
     }
     button.field-btn:disabled { opacity: 0.5; }
     .error { color: #ff8787; font-size: 0.82rem; margin-top: 0.55rem; }
-    .check-row { display: flex; align-items: center; gap: 0.55rem; margin: 0.85rem 0; font-size: 0.9rem; }
+    .check-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.65rem;
+      margin: 0.85rem 0 0.35rem;
+      padding: 0.65rem 0.75rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+    }
+    .check-row input[type="checkbox"] {
+      width: 1.05rem;
+      height: 1.05rem;
+      min-width: 1.05rem;
+      margin: 0.15rem 0 0;
+      padding: 0;
+      accent-color: var(--accent);
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+    .check-row label {
+      display: block;
+      margin: 0;
+      color: var(--text);
+      font-size: 0.9rem;
+      font-weight: 500;
+      line-height: 1.35;
+      cursor: pointer;
+      flex: 1;
+    }
     .thread-list {
       flex: 1;
       overflow-y: auto;
@@ -554,7 +583,7 @@ export function renderChatPage(): string {
       <input id="newTitle" placeholder="e.g. Trading ideas">
       <div class="check-row">
         <input type="checkbox" id="newPrivate">
-        <label for="newPrivate" style="margin:0">Private (extra password)</label>
+        <label for="newPrivate">Private chat <span style="color:var(--text-muted);font-weight:400">(extra password)</span></label>
       </div>
       <div id="newPasswordWrap" style="display:none">
         <label for="newThreadPassword">Chat password</label>

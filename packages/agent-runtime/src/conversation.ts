@@ -2,7 +2,7 @@ import type Database from "better-sqlite3";
 import { getMeta } from "./db.js";
 import { getIdentity } from "./identity.js";
 import { callLlm, type CallLlmOptions, type ChatMessage } from "./llm.js";
-import type { LlmCallResult } from "./llm-router.js";
+import { isSimpleChatMessage, type LlmCallResult } from "./llm-router.js";
 import { listMemories, searchMemories } from "./memory.js";
 import {
   addCreatorMessage,
@@ -54,11 +54,11 @@ export interface WalletSnapshot {
 const MAX_HISTORY_TURNS = 6;
 const MAX_MEMORY_SNIPPETS = 4;
 const MAX_MEMORY_CHARS = 120;
-const MAX_TOOL_RESULT_CHARS = 400;
-const STALE_TOOL_KEEP = 2;
+const MAX_TOOL_RESULT_CHARS = 1800;
+const STALE_TOOL_KEEP = 3;
 
 const PAST_CONTEXT_RE =
-  /remember when|what did (we|i|you)|last time|previously|earlier|recall|about our|you said|we discussed|you told/i;
+  /remember when|what did (we|i|you)|last time|previously|earlier|recall|about our|you said|we discussed|you told|past \d+|last \d+ (hour|day|week)|over the (past|last)/i;
 
 /** User wants work done — not small talk. */
 const TASK_REQUEST_RE =
@@ -66,6 +66,39 @@ const TASK_REQUEST_RE =
 
 const GREETING_ONLY_RE =
   /^(hi|hey|hello|yo|sup|thanks|thank you|ok|okay|cool|nice|good (morning|night)|what'?s up)\b[!.,?\s]*$/i;
+
+const CONVERSATIONAL_RE =
+  /^(are you okay|how are you|what do you think|what'd you think|what you mean|what do you mean|can you explain|why (are|did)|tell me about)/i;
+
+function looksConversational(userMessage: string): boolean {
+  const trimmed = userMessage.trim();
+  if (!trimmed || GREETING_ONLY_RE.test(trimmed)) return true;
+  if (CONVERSATIONAL_RE.test(trimmed)) return true;
+  if (isSimpleChatMessage(trimmed) && !TASK_REQUEST_RE.test(trimmed) && !looksLikeTaskRequest(trimmed)) {
+    return true;
+  }
+  if (
+    trimmed.length < 100 &&
+    trimmed.includes("?") &&
+    !TASK_REQUEST_RE.test(trimmed) &&
+    !looksLikeTaskRequest(trimmed)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function buildConversationalHint(userMessage: string): string {
+  if (!looksConversational(userMessage)) return "";
+  if (PAST_CONTEXT_RE.test(userMessage)) {
+    return [
+      "Conversational recall question.",
+      "You may call read_memories once, then answer in plain language.",
+      "Do not chain multiple lookup tools — synthesize an answer for the user.",
+    ].join(" ");
+  }
+  return "Conversational message: answer directly from chat history and memories in context. Skip tools unless you need live system data.";
+}
 
 function looksLikeTaskRequest(userMessage: string): boolean {
   const trimmed = userMessage.trim();
@@ -130,6 +163,7 @@ function buildConversationPrompt(
     `User access: ${role}.`,
     buildRolePromptSection(role),
     buildTaskPromptSection(userMessage, role),
+    buildConversationalHint(userMessage),
     formatWalletLine(wallet),
     memories ? `Recent memories (may be stale — use read_memories for recall):\n${memories}` : "",
   ]
@@ -192,10 +226,64 @@ export async function fetchWalletSnapshot(
   }
 }
 
-function safeFallbackAfterTools(messages: ChatMessage[]): string {
+function safeFallbackAfterTools(messages: ChatMessage[], userMessage: string): string {
+  const memoryLines = extractMemoryLinesFromTools(messages);
+  if (memoryLines.length > 0) {
+    return [
+      `Here's what I pulled from memory about that:`,
+      memoryLines.join("\n"),
+      "",
+      "Ask a follow-up if you want me to dig into something specific.",
+    ].join("\n");
+  }
+
   const names = [...new Set(messages.filter((m) => m.role === "tool" && m.name).map((m) => m.name!))];
   const tools = names.length > 0 ? ` (used ${names.join(", ")})` : "";
-  return `I ran some checks${tools} but couldn't put together a clean answer. Try asking again in plain language.`;
+  return `I looked into "${userMessage}"${tools} but the model didn't return a clean reply. Try asking again — I'll answer in plain language.`;
+}
+
+function extractMemoryLinesFromTools(messages: ChatMessage[]): string[] {
+  const lines: string[] = [];
+  for (const m of messages) {
+    if (m.role !== "tool" || m.name !== "read_memories") continue;
+    try {
+      const rows = JSON.parse(m.content) as { content?: string; type?: string }[];
+      if (!Array.isArray(rows)) continue;
+      for (const row of rows.slice(0, 6)) {
+        if (row.content) {
+          const cap =
+            row.content.length > 220 ? `${row.content.slice(0, 217)}...` : row.content;
+          lines.push(`- ${row.type ? `(${row.type}) ` : ""}${cap}`);
+        }
+      }
+    } catch {
+      const snippet = m.content.trim().slice(0, 400);
+      if (snippet) lines.push(`- ${snippet}`);
+    }
+  }
+  return lines;
+}
+
+async function requestTextReplyAfterTools(
+  config: RuntimeConfig,
+  db: Database.Database,
+  messages: ChatMessage[],
+  userMessage: string
+): Promise<{ text: string; model: LlmCallResult | null }> {
+  const tail: ChatMessage[] = [
+    ...messages,
+    {
+      role: "user",
+      content:
+        `Using the tool results above, answer my message now in plain conversational language. ` +
+        `Do not call more tools. Be direct and specific.\n\nMy message: "${userMessage}"`,
+    },
+  ];
+  const routing: CallLlmOptions = {
+    routing: { purpose: "chat", userMessage, toolStep: 0, toolsOffered: 0 },
+  };
+  const response = await callLlm(config, db, budgetChatMessages(tail), [], routing);
+  return { text: response.content.trim(), model: response.meta ?? null };
 }
 
 async function synthesizeReply(
@@ -204,17 +292,9 @@ async function synthesizeReply(
   messages: ChatMessage[],
   userMessage: string
 ): Promise<string> {
-  messages.push({
-    role: "system",
-    content:
-      "Write your final reply to the user based on the tool results above. Be direct and conversational. " +
-      "Never paste raw shell output, file contents, or source code unless the user explicitly asked to see them.",
-  });
-  const routing: CallLlmOptions = {
-    routing: { purpose: "synthesis", userMessage },
-  };
-  const final = await callLlm(config, db, messages, [], routing);
-  return final.content.trim();
+  const afterTools = await requestTextReplyAfterTools(config, db, messages, userMessage);
+  if (!isPlaceholderReply(afterTools.text)) return afterTools.text;
+  return "";
 }
 
 function parsePendingSend(toolResult: string): { id: number; to: string; amount: number } | null {
@@ -277,6 +357,13 @@ async function runChatWithTools(
         });
       }
     }
+
+    const afterTools = await requestTextReplyAfterTools(config, db, messages, userMessage);
+    if (afterTools.model) lastModel = afterTools.model;
+    if (!isPlaceholderReply(afterTools.text)) {
+      reply = afterTools.text;
+      break;
+    }
   }
 
   const runTaskReply = replyFromRunTask(messages);
@@ -306,7 +393,7 @@ async function runChatWithTools(
   }
 
   if (isPlaceholderReply(reply)) {
-    reply = usedTools ? safeFallbackAfterTools(messages) : "";
+    reply = usedTools ? safeFallbackAfterTools(messages, userMessage) : "";
   }
 
   if (isPlaceholderReply(reply)) {
