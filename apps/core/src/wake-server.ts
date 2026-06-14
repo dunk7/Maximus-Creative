@@ -124,7 +124,14 @@ async function handleThreadChatStream(
     const wallet = await loadWalletSnapshot(runtimeConfig);
     const keypair = loadOrCreateWallet(runtimeConfig);
     const tools = getChatToolDefinitions(db, role);
-    const executeTool = createToolExecutor(db, runtimeConfig, keypair, role);
+    const onEvent = (event: ChatStreamEvent) => {
+      if (event.type === "status" || event.type === "activity" || event.type === "pending_send") {
+        writeSse(res, event);
+      }
+    };
+    const executeTool = createToolExecutor(db, runtimeConfig, keypair, role, {
+      onTaskProgress: (message) => onEvent({ type: "activity", message }),
+    });
     return generateCreatorChatReply(
       db,
       runtimeConfig,
@@ -134,11 +141,7 @@ async function handleThreadChatStream(
       executeTool,
       threadId,
       role,
-      (event: ChatStreamEvent) => {
-        if (event.type === "status" || event.type === "pending_send") {
-          writeSse(res, event);
-        }
-      }
+      onEvent
     );
   });
   streamChatReply((event: ChatStreamEvent) => writeSse(res, event), generated);

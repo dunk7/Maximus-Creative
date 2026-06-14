@@ -62,7 +62,7 @@ This is a **~512 MB machine**, not a 1 GB machine. The whole VM can freeze if yo
 - Reply in chat **without tools** for greetings and simple questions
 - **Creative self-mod:** `edit_file` (any path, including `.env` and `wallet/`) → `rebuild_core` → `self_restart`
 - **Dependencies:** `npm install` / `npm ci` via `run_shell` (prefer `--omit=dev` on this host)
-- Key UI sources: `apps/core/src/chat-page.ts`, `apps/core/src/dashboard-page.ts`
+- Key UI sources: `apps/core/src/chat-page.ts`, `apps/core/src/dashboard-page.ts` (TypeScript source is in the Akash image — edit src, not dist)
 
 ## Avoid (risks, not hard blocks for creative)
 

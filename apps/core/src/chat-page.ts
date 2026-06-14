@@ -419,6 +419,24 @@ export function renderChatPage(): string {
       padding: 0.35rem 1rem;
       min-height: 1.4rem;
     }
+    .activity-feed {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      padding: 0.25rem 1rem 0.5rem;
+      max-height: 9rem;
+      overflow-y: auto;
+    }
+    .activity-feed:empty { display: none; }
+    .activity-item {
+      font-size: 0.78rem;
+      color: #7c7c8e;
+      line-height: 1.35;
+      padding: 0.2rem 0.55rem;
+      border-left: 2px solid #4c6ef544;
+      background: #12121a88;
+      border-radius: 0 6px 6px 0;
+    }
     .tick-banner {
       margin: 0.35rem 1rem 0;
       padding: 0.55rem 0.85rem;
@@ -565,6 +583,7 @@ export function renderChatPage(): string {
       ${i("brain", 16)}
       <span>Maximus is running a background thinking tick…</span>
     </div>
+    <div class="activity-feed" id="activityFeed"></div>
     <div class="status-line" id="streamStatus"></div>
     <div id="messages"></div>
     <form id="composer">
@@ -650,6 +669,7 @@ export function renderChatPage(): string {
     const newChatBtn = document.getElementById("newChatBtn");
     const deleteChatBtn = document.getElementById("deleteChatBtn");
     const streamStatus = document.getElementById("streamStatus");
+    const activityFeed = document.getElementById("activityFeed");
     const tickBanner = document.getElementById("tickBanner");
     let activityPollTimer = null;
     const solModal = document.getElementById("solModal");
@@ -711,10 +731,24 @@ export function renderChatPage(): string {
 
     function applyRoleUi() {
       const role = sessionRole || "creative";
-      roleBadge.style.display = sessionRole ? "inline-block" : "none";
+      const showBadge = sessionRole && role !== "creative";
+      roleBadge.style.display = showBadge ? "inline-block" : "none";
       roleBadge.textContent = sessionLabel || role;
       roleBadge.className = "role-badge " + role;
       window.__canSolApprove = role === "creative" || role === "family";
+    }
+
+    function clearActivityFeed() {
+      if (activityFeed) activityFeed.innerHTML = "";
+    }
+
+    function addActivityLine(message) {
+      if (!activityFeed || !message) return;
+      const el = document.createElement("div");
+      el.className = "activity-item";
+      el.textContent = message;
+      activityFeed.appendChild(el);
+      activityFeed.scrollTop = activityFeed.scrollHeight;
     }
 
     function showScreen(name) {
@@ -729,7 +763,10 @@ export function renderChatPage(): string {
           : "none";
       const canCreate = sessionRole === "creative" || sessionRole === "family";
       newChatBtn.style.display = name === "threads" && canCreate ? "inline-flex" : "none";
-      if (name !== "chat") streamStatus.textContent = "";
+      if (name !== "chat") {
+        streamStatus.textContent = "";
+        clearActivityFeed();
+      }
     }
 
     function sitePassword() {
@@ -1054,6 +1091,7 @@ export function renderChatPage(): string {
       autoGrowTextarea();
       setSending(true);
       addBubble(text, "you");
+      clearActivityFeed();
       showTyping();
       let replyBubble = null;
       let buffer = "";
@@ -1075,6 +1113,10 @@ export function renderChatPage(): string {
           buffer += decoder.decode(value, { stream: true });
           buffer = parseSseChunk(buffer, (event, data) => {
             if (event === "status") streamStatus.textContent = data.message || "";
+            if (event === "activity") {
+              addActivityLine(data.message || "");
+              streamStatus.textContent = data.message || "";
+            }
             if (event === "model") {
               const label = data.label || (data.provider && data.model ? data.provider + "/" + data.model : null);
               if (label) {
@@ -1098,6 +1140,7 @@ export function renderChatPage(): string {
               if (!replyBubble) replyBubble = addBubble("", "maximus");
               setBubbleContent(replyBubble, data.response || replyBubble.dataset.raw || "", "maximus");
               streamStatus.textContent = "";
+              clearActivityFeed();
               const label =
                 data.model_label ||
                 (data.provider && data.model ? data.provider + "/" + data.model : null);

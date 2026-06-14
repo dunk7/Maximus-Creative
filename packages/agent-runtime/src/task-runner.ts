@@ -49,6 +49,7 @@ TASK EXECUTION MODE — work autonomously until done.
 - Use tools to make real progress. Do not stop after planning — execute.
 - Break the work into substeps and finish each one.
 - Simple runtime config (tick interval, etc.): call edit_config once — it applies on the next loop without rebuild or restart. Then reply with complete JSON.
+- UI changes: edit apps/core/src/chat-page.ts or dashboard-page.ts → rebuild_core → self_restart. Never edit dist/*.js.
 - Do not repeat the same tool with identical arguments more than twice. If stuck, reply blocked JSON.
 - When the task is fully complete, respond with ONLY this JSON (no markdown):
   {"status":"complete","summary":"Concrete recap: files changed, commands run, what was fixed or built — not step counts."}

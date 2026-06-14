@@ -11,7 +11,11 @@ import {
   type CreatorMessageRow,
 } from "./messages.js";
 import { autoTitleChatThread } from "./threads.js";
-import { buildRolePromptSection, type UserRole } from "./access.js";
+import {
+  buildRolePromptSection,
+  type UserRole,
+} from "./access.js";
+import { formatTickIntervalLine } from "./tick-interval.js";
 import { buildRuntimeEnvironmentBrief } from "./runtime-environment.js";
 import type { RuntimeConfig, ToolDefinition } from "./types.js";
 import type { ToolExecutor } from "./tick.js";
@@ -28,6 +32,7 @@ export interface ChatResult {
 
 export type ChatStreamEvent =
   | { type: "status"; message: string }
+  | { type: "activity"; message: string }
   | { type: "model"; label: string; model: string; provider: string }
   | { type: "token"; text: string }
   | { type: "pending_send"; id: number; to: string; amount_sol: number }
@@ -70,8 +75,12 @@ const GREETING_ONLY_RE =
 const CONVERSATIONAL_RE =
   /^(are you okay|how are you|what do you think|what'd you think|what you mean|what do you mean|can you explain|why (are|did)|tell me about)/i;
 
+const SYSTEM_STATE_RE =
+  /tick|background|interval|how often|configured|runtime|what are you|what is your|how long|current (setting|config)|my caps|your caps/i;
+
 function looksConversational(userMessage: string): boolean {
   const trimmed = userMessage.trim();
+  if (SYSTEM_STATE_RE.test(trimmed)) return false;
   if (!trimmed || GREETING_ONLY_RE.test(trimmed)) return true;
   if (CONVERSATIONAL_RE.test(trimmed)) return true;
   if (isSimpleChatMessage(trimmed) && !TASK_REQUEST_RE.test(trimmed) && !looksLikeTaskRequest(trimmed)) {
@@ -164,6 +173,7 @@ function buildConversationPrompt(
     buildRolePromptSection(role),
     buildTaskPromptSection(userMessage, role),
     buildConversationalHint(userMessage),
+    formatTickIntervalLine(config, db),
     formatWalletLine(wallet),
     memories ? `Recent memories (may be stale — use read_memories for recall):\n${memories}` : "",
   ]
@@ -275,8 +285,8 @@ async function requestTextReplyAfterTools(
     {
       role: "user",
       content:
-        `Using the tool results above, answer my message now in plain conversational language. ` +
-        `Do not call more tools. Be direct and specific.\n\nMy message: "${userMessage}"`,
+        `Using the tool results above, answer the user's message in plain conversational language. ` +
+        `Be direct and specific.\n\nUser message: "${userMessage}"`,
     },
   ];
   const routing: CallLlmOptions = {
@@ -311,7 +321,7 @@ async function runChatWithTools(
   executeTool: ToolExecutor,
   userMessage: string,
   maxSteps = 8,
-  onTool?: (name: string, result: string) => void
+  onEvent?: (event: ChatStreamEvent) => void
 ): Promise<ChatReplyWithModel> {
   let reply = "";
   let usedTools = false;
@@ -319,6 +329,7 @@ async function runChatWithTools(
   let restartRequested = false;
 
   for (let step = 0; step < maxSteps; step++) {
+    onEvent?.({ type: "activity", message: step === 0 ? "Thinking…" : `Thinking (step ${step + 1})…` });
     const routing: CallLlmOptions = {
       routing: {
         purpose: "chat",
@@ -337,10 +348,30 @@ async function runChatWithTools(
     messages.push({ role: "assistant", content: response.content || "(tool calls)" });
 
     for (const call of response.toolCalls) {
+      const toolLabel = call.name === "run_task" ? "run_task" : call.name;
+      onEvent?.({ type: "activity", message: `Running ${toolLabel}…` });
+      onEvent?.({ type: "status", message: `Running ${toolLabel}…` });
       try {
         const toolOut = await executeTool(call.name, call.arguments);
         if (toolOut.restartRequested) restartRequested = true;
-        onTool?.(call.name, toolOut.result);
+        const preview = toolOut.result.trim().slice(0, 120).replace(/\s+/g, " ");
+        if (preview) {
+          onEvent?.({
+            type: "activity",
+            message: `${call.name}: ${preview}${toolOut.result.length > 120 ? "…" : ""}`,
+          });
+        }
+        if (call.name === "solana_send") {
+          const parsed = parsePendingSend(toolOut.result);
+          if (parsed) {
+            onEvent?.({
+              type: "pending_send",
+              id: parsed.id,
+              to: parsed.to,
+              amount_sol: parsed.amount,
+            });
+          }
+        }
         messages.push({
           role: "tool",
           name: call.name,
@@ -525,20 +556,16 @@ export async function generateCreatorChatReply(
 
   onEvent?.({ type: "status", message: "Thinking..." });
 
-  const { reply, model, restartRequested } = await runChatWithTools(config, db, messages, tools, executeTool, trimmed, 8, (name, result) => {
-    onEvent?.({ type: "status", message: `Running ${name}...` });
-    if (name === "solana_send") {
-      const parsed = parsePendingSend(result);
-      if (parsed) {
-        onEvent?.({
-          type: "pending_send",
-          id: parsed.id,
-          to: parsed.to,
-          amount_sol: parsed.amount,
-        });
-      }
-    }
-  });
+  const { reply, model, restartRequested } = await runChatWithTools(
+    config,
+    db,
+    messages,
+    tools,
+    executeTool,
+    trimmed,
+    8,
+    onEvent
+  );
 
   answerCreatorMessage(db, pending.id, reply);
   autoTitleChatThread(db, threadId, trimmed);
@@ -567,7 +594,9 @@ export async function runCreatorChatStream(
     threadId,
     role,
     (event) => {
-      if (event.type === "status" || event.type === "pending_send") emit(event);
+      if (event.type === "status" || event.type === "activity" || event.type === "pending_send") {
+        emit(event);
+      }
     }
   );
   streamChatReply(emit, result);

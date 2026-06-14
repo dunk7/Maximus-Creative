@@ -242,7 +242,7 @@ const STATIC_TOOLS: ToolDefinition[] = [
   {
     name: "edit_config",
     description:
-      "Update a runtime config key in the database. For tick interval use key=tick_interval_ms value=3600000 (1h) or 1800000 (30m). Takes effect on the next loop tick — no rebuild needed.",
+      "Update a runtime config key in the database. For tick interval use key=tick_interval_ms value=7200000 (2h), 3600000 (1h), or 1800000 (30m). Takes effect on the next loop tick — no rebuild needed.",
     parameters: {
       type: "object",
       properties: { key: { type: "string" }, value: { type: "string" } },
@@ -426,6 +426,8 @@ export interface ToolExecutorOptions {
   tickMode?: boolean;
   /** Allow edit_file / rebuild_core / self_restart during tick (default true for creative growth). */
   allowSelfMod?: boolean;
+  /** Stream run_task progress to chat UI. */
+  onTaskProgress?: (message: string) => void;
 }
 
 export function createToolExecutor(
@@ -435,7 +437,7 @@ export function createToolExecutor(
   role: UserRole = "creative",
   options: ToolExecutorOptions = {}
 ) {
-  const { tickMode = false, allowSelfMod = true } = options;
+  const { tickMode = false, allowSelfMod = true, onTaskProgress } = options;
 
   return async function executeTool(
     name: string,
@@ -620,6 +622,7 @@ export function createToolExecutor(
           goalId: Number.isFinite(goalId) ? goalId : undefined,
           maxSteps,
           maxWallMs: timeoutMinutes * 60 * 1000,
+          onProgress: onTaskProgress,
         });
 
         return {

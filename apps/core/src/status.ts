@@ -1,12 +1,11 @@
 import type Database from "better-sqlite3";
 import {
-  clampTickIntervalMs,
   getMeta,
-  getRuntimeSetting,
   listCreatorMessages,
   listGoals,
   listJournal,
   loadConfig,
+  resolveTickIntervalMs,
   type RuntimeConfig,
 } from "@maximus/agent-runtime";
 import { getAgentBusyState } from "./agent-lock.js";
@@ -110,7 +109,5 @@ export async function buildAgentStatus(
 }
 
 export function getEffectiveTickIntervalMs(config: RuntimeConfig, db: Database.Database): number {
-  const override = getRuntimeSetting(db, "tick_interval_ms");
-  if (override) return clampTickIntervalMs(Number(override));
-  return clampTickIntervalMs(config.tickIntervalMs);
+  return resolveTickIntervalMs(config, db);
 }

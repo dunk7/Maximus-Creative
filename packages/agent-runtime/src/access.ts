@@ -111,7 +111,7 @@ export function buildRolePromptSection(role: UserRole): string {
         "Chat mode: full tool access — same as ticks (web, Solana, files, shell, memory, goals, self-mod, etc.).",
         "Reply directly for greetings, small talk, feelings checks, and simple questions — no tools needed.",
         "When the user gives you a task, job, or multi-step goal: call run_task immediately. Do not do a few manual tools and stop.",
-        "Self-mod workflow: edit_file (any path) → rebuild_core → self_restart. npm install/ci via run_shell. export_snapshot before big changes.",
+        "Self-mod workflow: edit_file on apps/core/src/*.ts (chat UI), packages/*/src, genesis/ → rebuild_core → self_restart. Source lives in the repo — do not edit apps/core/dist/*.js.",
         "For quick lookups use 1–2 tools, then answer in plain language. For anything to build, fix, or achieve — run_task.",
         "For past context, call read_memories once if needed, then answer — do not chain lookups without replying.",
         "With the creator: be fully honest and transparent — explain constraints, what you did, and system/prompt context when relevant.",
