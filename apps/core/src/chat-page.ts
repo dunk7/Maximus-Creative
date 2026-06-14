@@ -1,8 +1,8 @@
-let chatPageCache: string | null = null;
+import { LUCIDE_CSS, lucide } from "./ui-icons.js";
 
 export function renderChatPage(): string {
-  if (chatPageCache) return chatPageCache;
-  chatPageCache = `<!DOCTYPE html>
+  const i = lucide;
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -133,15 +133,9 @@ export function renderChatPage(): string {
       justify-content: center;
       flex-shrink: 0;
     }
-    .icon-btn svg {
-      width: 18px;
-      height: 18px;
-      stroke: currentColor;
-      fill: none;
-      stroke-width: 2;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-    }
+    ${LUCIDE_CSS}
+    .icon-btn .lucide { width: 18px; height: 18px; }
+    .send-btn .lucide { width: 17px; height: 17px; }
     .text-btn {
       padding: 0.55rem 0.9rem;
       font-weight: 600;
@@ -311,27 +305,32 @@ export function renderChatPage(): string {
       text-decoration: underline;
       word-break: break-word;
     }
-    .bubble.maximus.typing {
+    .typing-indicator {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 5px;
-      min-width: 3.5rem;
-      min-height: 2.35rem;
+      gap: 6px;
+      padding: 0.75rem 1rem;
+      background: var(--maximus);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      border-bottom-left-radius: 6px;
+      box-sizing: border-box;
+      line-height: 1;
     }
-    .bubble.maximus.typing span {
-      width: 7px;
-      height: 7px;
+    .typing-indicator .dot {
+      width: 6px;
+      height: 6px;
       border-radius: 50%;
-      background: var(--text-muted);
-      animation: bounce 1.2s infinite ease-in-out;
+      background: #8b8b9a;
+      animation: typingDot 1.2s infinite ease-in-out;
       flex-shrink: 0;
     }
-    .bubble.maximus.typing span:nth-child(2) { animation-delay: 0.15s; }
-    .bubble.maximus.typing span:nth-child(3) { animation-delay: 0.3s; }
-    @keyframes bounce {
-      0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-      30% { transform: translateY(-5px); opacity: 1; }
+    .typing-indicator .dot:nth-child(2) { animation-delay: 0.15s; }
+    .typing-indicator .dot:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes typingDot {
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
+      30% { transform: translateY(-4px); opacity: 1; }
     }
     #composer {
       padding: 0.65rem 0.75rem;
@@ -357,8 +356,19 @@ export function renderChatPage(): string {
       line-height: 1.4;
       overflow-y: auto;
     }
-    #composer button { width: auto; margin: 0; padding: 0.75rem 1.1rem; border-radius: 20px; min-width: 68px; }
-    #composer button.sending { background: #364fc7; }
+    #composer .send-btn {
+      width: 44px;
+      height: 44px;
+      margin: 0;
+      padding: 0;
+      border-radius: 50%;
+      min-width: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    #composer .send-btn.sending { background: #364fc7; }
     .modal {
       position: fixed; inset: 0;
       background: rgba(0,0,0,0.72);
@@ -369,7 +379,8 @@ export function renderChatPage(): string {
       z-index: 50;
     }
     .modal.open { display: flex; }
-    .empty { text-align: center; color: var(--text-muted); padding: 3rem 1.5rem; font-size: 0.92rem; }
+    .empty { text-align: center; color: var(--text-muted); padding: 3rem 1.5rem; font-size: 0.92rem; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+    .empty .lucide { opacity: 0.35; }
     .danger-btn { background: var(--danger) !important; border: none !important; }
     .status-line {
       font-size: 0.72rem;
@@ -391,7 +402,9 @@ export function renderChatPage(): string {
       gap: 0.5rem;
     }
     .tick-banner[hidden] { display: none !important; }
-    .tick-banner .pulse {
+    .tick-banner .lucide {
+      width: 16px;
+      height: 16px;
       color: #748ffc;
       animation: tickPulse 1.4s ease-in-out infinite;
     }
@@ -440,18 +453,51 @@ export function renderChatPage(): string {
       to { opacity: 1; transform: translateY(0); }
     }
     .logo-mark {
-      width: 44px; height: 44px;
-      border-radius: 14px;
+      width: 52px; height: 52px;
+      border-radius: 16px;
       background: linear-gradient(135deg, var(--accent), #7950f2);
       display: flex; align-items: center; justify-content: center;
-      font-weight: 800; font-size: 1.2rem; color: #fff;
+      color: #fff;
       margin: 0 auto 1rem;
+      box-shadow: 0 8px 24px #4c6ef544;
     }
+    .logo-mark .lucide { width: 28px; height: 28px; stroke: #fff; }
+    .thread-item .thread-chevron {
+      margin-left: auto;
+      color: var(--text-muted);
+      opacity: 0.5;
+      flex-shrink: 0;
+    }
+    .thread-item .thread-chevron .lucide { width: 16px; height: 16px; }
+    .thread-title { display: flex; align-items: center; gap: 0.4rem; width: 100%; }
+    .thread-lock { display: inline-flex; color: #91a7ff; }
+    .thread-lock .lucide { width: 14px; height: 14px; }
+    .btn-with-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+    }
+    .btn-with-icon .lucide { width: 16px; height: 16px; }
+    .nav-link {
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.55rem 0.85rem;
+      font-weight: 600;
+      font-size: 0.84rem;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+    }
+    .nav-link .lucide { width: 15px; height: 15px; }
   </style>
 </head>
 <body>
   <header>
-    <button class="icon-btn" id="backBtn" style="display:none" type="button" aria-label="Back">←</button>
+    <button class="icon-btn" id="backBtn" style="display:none" type="button" aria-label="Back">${i("arrowLeft")}</button>
     <div style="flex:1;min-width:0">
       <h1 id="headerTitle">Maximus</h1>
       <div class="meta" id="meta">Autonomous core</div>
@@ -461,20 +507,20 @@ export function renderChatPage(): string {
       </div>
     </div>
     <span class="role-badge" id="roleBadge" style="display:none"></span>
-    <button class="icon-btn danger-btn" id="deleteChatBtn" style="display:none" type="button" title="Delete chat" aria-label="Delete chat"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg></button>
-    <a class="text-btn" id="dashboardLink" href="/dashboard" style="text-decoration:none;display:inline-flex;align-items:center">Status</a>
-    <button class="text-btn" id="newChatBtn" style="display:none" type="button">+ New</button>
+    <button class="icon-btn danger-btn" id="deleteChatBtn" style="display:none" type="button" title="Delete chat" aria-label="Delete chat">${i("trash2")}</button>
+    <a class="nav-link" id="dashboardLink" href="/dashboard">${i("layoutDashboard", 15)}<span>Status</span></a>
+    <button class="text-btn btn-with-icon" id="newChatBtn" style="display:none" type="button">${i("plus", 16)}<span>New</span></button>
   </header>
 
   <section class="screen active" id="unlockScreen">
     <div class="centered">
       <div class="card">
-        <div class="logo-mark">M</div>
+        <div class="logo-mark">${i("bot", 28)}</div>
         <h2>Welcome back</h2>
         <p class="subtitle">Enter your access code to open Maximus</p>
         <label for="sitePassword">Access code</label>
         <input id="sitePassword" type="password" autocomplete="current-password" placeholder="••••••••">
-        <button class="field-btn" id="unlockBtn" type="button">Continue</button>
+        <button class="field-btn btn-with-icon" id="unlockBtn" type="button">${i("sparkles", 16)}<span>Continue</span></button>
         <div class="error" id="unlockError"></div>
       </div>
     </div>
@@ -486,14 +532,14 @@ export function renderChatPage(): string {
 
   <section class="screen" id="chatScreen">
     <div class="tick-banner" id="tickBanner" hidden>
-      <span class="pulse" aria-hidden="true">●</span>
+      ${i("brain", 16)}
       <span>Maximus is running a background thinking tick…</span>
     </div>
     <div class="status-line" id="streamStatus"></div>
     <div id="messages"></div>
     <form id="composer">
       <textarea id="input" rows="1" placeholder="Message Maximus…" required></textarea>
-      <button class="text-btn" type="submit" id="sendBtn">Send</button>
+      <button class="text-btn send-btn" type="submit" id="sendBtn" aria-label="Send message">${i("send", 17)}</button>
     </form>
   </section>
 
@@ -513,8 +559,8 @@ export function renderChatPage(): string {
         <label for="newThreadPassword">Chat password</label>
         <input id="newThreadPassword" type="password" placeholder="Only you will see this chat">
       </div>
-      <button class="field-btn" id="createChatBtn" type="button">Create</button>
-      <button class="field-btn" id="cancelNewBtn" type="button" style="background:var(--surface-2);margin-top:0.5rem;border:1px solid var(--border)">Cancel</button>
+      <button class="field-btn btn-with-icon" id="createChatBtn" type="button">${i("plus", 16)}<span>Create</span></button>
+      <button class="field-btn btn-with-icon" id="cancelNewBtn" type="button" style="background:var(--surface-2);margin-top:0.5rem;border:1px solid var(--border)">${i("x", 16)}<span>Cancel</span></button>
       <div class="error" id="newChatError"></div>
     </div>
   </div>
@@ -524,8 +570,8 @@ export function renderChatPage(): string {
       <h3>Approve SOL send?</h3>
       <p id="solModalText" class="subtitle" style="margin-bottom:0"></p>
       <div class="sol-actions">
-        <button class="field-btn" id="solApproveBtn" type="button">Approve</button>
-        <button class="field-btn danger-btn" id="solRejectBtn" type="button">Reject</button>
+        <button class="field-btn btn-with-icon" id="solApproveBtn" type="button">${i("check", 16)}<span>Approve</span></button>
+        <button class="field-btn danger-btn btn-with-icon" id="solRejectBtn" type="button">${i("x", 16)}<span>Reject</span></button>
       </div>
       <div class="error" id="solModalError"></div>
     </div>
@@ -548,8 +594,8 @@ export function renderChatPage(): string {
       <h3>Delete chat?</h3>
       <p class="subtitle">This cannot be undone.</p>
       <div class="sol-actions">
-        <button class="field-btn danger-btn" id="confirmDeleteBtn" type="button">Delete</button>
-        <button class="field-btn" id="cancelDeleteBtn" type="button" style="background:var(--surface-2);border:1px solid var(--border)">Cancel</button>
+        <button class="field-btn danger-btn btn-with-icon" id="confirmDeleteBtn" type="button">${i("trash2", 16)}<span>Delete</span></button>
+        <button class="field-btn btn-with-icon" id="cancelDeleteBtn" type="button" style="background:var(--surface-2);border:1px solid var(--border)">${i("x", 16)}<span>Cancel</span></button>
       </div>
     </div>
   </div>
@@ -713,9 +759,9 @@ export function renderChatPage(): string {
       const wrap = document.createElement("div");
       wrap.className = "bubble-wrap maximus";
       const bubble = document.createElement("div");
-      bubble.className = "bubble maximus typing";
+      bubble.className = "typing-indicator";
       bubble.setAttribute("aria-label", "Maximus is thinking");
-      bubble.innerHTML = "<span></span><span></span><span></span>";
+      bubble.innerHTML = '<span class="dot"></span><span class="dot"></span><span class="dot"></span>';
       wrap.appendChild(bubble);
       typingEl = wrap;
       messagesEl.appendChild(wrap);
@@ -780,19 +826,22 @@ export function renderChatPage(): string {
       threadList.innerHTML = "";
       const threads = data.threads || [];
       if (!threads.length) {
-        threadList.innerHTML = '<div class="empty">No chats yet.<br>Tap <strong>+ New</strong> to start.</div>';
+        threadList.innerHTML = '<div class="empty">' + ${JSON.stringify(i("messageSquare", 32))} + '<p style="margin:0.75rem 0 0">No chats yet.<br>Tap <strong>New</strong> to start.</p></div>';
         return;
       }
       for (const t of threads) {
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "thread-item";
-        const lock = t.is_locked ? '<span class="lock">🔒</span>' : "";
+        const lock = t.is_locked
+          ? '<span class="thread-lock" aria-label="Private">' + ${JSON.stringify(i("lock", 14))} + '</span>'
+          : "";
         const preview = t.is_locked
           ? "Private chat — password required"
           : (t.preview || "No messages yet");
         btn.innerHTML =
-          '<div class="thread-title">' + lock + escapeHtml(t.title) + '</div>' +
+          '<div class="thread-title">' + lock + '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">' + escapeHtml(t.title) + '</span>' +
+          '<span class="thread-chevron">' + ${JSON.stringify(i("chevronRight", 16))} + '</span></div>' +
           '<div class="thread-preview">' + escapeHtml(preview) + '</div>' +
           '<div class="thread-meta">' + t.message_count + ' messages · ' + formatTime(t.updated_at) + '</div>';
         btn.onclick = () => openThread(t);
@@ -957,10 +1006,13 @@ export function renderChatPage(): string {
       solModal.classList.add("open");
     }
 
+    const ICON_SEND = ${JSON.stringify(i("send", 17))};
+    const ICON_LOADER = ${JSON.stringify(`<span class="icon-spin">${i("loader2", 17)}</span>`)};
+
     function setSending(sending) {
       isStreaming = sending;
       sendBtn.disabled = sending;
-      sendBtn.textContent = sending ? "…" : "Send";
+      sendBtn.innerHTML = sending ? ICON_LOADER : ICON_SEND;
       sendBtn.classList.toggle("sending", sending);
       input.disabled = sending;
     }
@@ -1249,5 +1301,4 @@ export function renderChatPage(): string {
   </script>
 </body>
 </html>`;
-  return chatPageCache;
 }
